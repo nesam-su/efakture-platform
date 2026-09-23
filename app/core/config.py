@@ -1,8 +1,9 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -13,8 +14,8 @@ class Settings(BaseSettings):
     credential_encryption_key: str
     database_url: str = "postgresql+asyncpg://efakture:efakture@localhost:5432/efakture"
     access_token_minutes: int = Field(default=30, ge=5, le=1440)
-    allowed_hosts: list[str] = ["localhost", "127.0.0.1"]
-    cors_origins: list[str] = []
+    allowed_hosts: Annotated[list[str], NoDecode] = ["localhost", "127.0.0.1"]
+    cors_origins: Annotated[list[str], NoDecode] = []
     artifact_storage_path: Path = Path("/data/artifacts")
     max_artifact_bytes: int = Field(default=25 * 1024 * 1024, ge=1024, le=250 * 1024 * 1024)
     worker_poll_seconds: float = Field(default=2.0, ge=0.2, le=60)

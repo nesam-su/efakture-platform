@@ -33,3 +33,20 @@ def test_public_pages(monkeypatch):
     response = client.get("/")
     assert response.status_code == 200
     assert "eDokumenti" in response.text
+    assert 'id="document-dialog"' in response.text
+    assert 'id="organization-select"' in response.text
+    assert client.get("/static/app.css").status_code == 200
+    assert client.get("/static/app.js").status_code == 200
+    assert client.get("/static/favicon.svg").status_code == 200
+
+
+def test_csv_environment_lists(monkeypatch):
+    monkeypatch.setenv("APP_SECRET_KEY", "x" * 48)
+    monkeypatch.setenv("APP_CREDENTIAL_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    monkeypatch.setenv("APP_ALLOWED_HOSTS", "localhost,127.0.0.1")
+    monkeypatch.setenv("APP_CORS_ORIGINS", "https://app.example.rs,https://admin.example.rs")
+    from app.core.config import Settings
+
+    settings = Settings()
+    assert settings.allowed_hosts == ["localhost", "127.0.0.1"]
+    assert settings.cors_origins == ["https://app.example.rs", "https://admin.example.rs"]

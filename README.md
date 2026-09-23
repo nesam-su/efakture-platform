@@ -26,6 +26,8 @@ Integracioni sloj je mapiran prema lokalnoj dokumentaciji od 31. jula i 21. avgu
 - automatska SEF sinhronizacija izlaznih i ulaznih faktura sa vremenskim preklapanjem;
 - paginirana eOtpremnice sinhronizacija zahteva i supplier/customer/carrier tokova;
 - idempotentni dnevnik spoljnih događaja i automatsko preuzimanje XML-a novog dokumenta.
+- responsive radni panel za dokumente, poslove, događaje, korisnike i integracije;
+- kreiranje dokumenta, XML upload, slanje u red i preuzimanje priloga bez Swagger-a.
 
 ## Lokalno pokretanje
 
@@ -75,5 +77,9 @@ Worker periodično obrađuje svaki aktivni API ključ firme. SEF tokovi koriste 
 - `GET /api/v1/external-events` prikazuje primljene događaje.
 - `GET /api/v1/sync-cursors` prikazuje trenutno mesto svakog toka.
 - Novi udaljeni dokument automatski dobija lokalni zapis i `remote_xml` prilog.
+
+## Web interfejs
+
+Nakon prijave korisnik bira firmu kojoj pripada. Interfejs automatski šalje `X-Organization-Id` uz svaki tenant zahtev i prikazuje akcije prema ulozi korisnika. Vlasnik i administrator mogu da povežu servise i izdaju pozivnice; knjigovođa i operater mogu da kreiraju i šalju dokumente; korisnik sa ulogom pregleda nema akcije izmene.
 
 Detaljnije odluke su u [`docs/ARHITEKTURA.md`](docs/ARHITEKTURA.md), zahtevi u [`docs/MATRICA-ZAHTEVA.md`](docs/MATRICA-ZAHTEVA.md), a tehnički nalazi u [`docs/ZAHTEVI-IZ-DOKUMENTACIJE.md`](docs/ZAHTEVI-IZ-DOKUMENTACIJE.md).
