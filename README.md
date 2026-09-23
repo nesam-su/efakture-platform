@@ -20,6 +20,9 @@ Integracioni sloj je mapiran prema lokalnoj dokumentaciji od 31. jula i 21. avgu
 - konkretni eOtpremnice klijent za asinhrono slanje, PULL tokove po ulozi, validaciju i priloge;
 - poseban eOtpremnice offline klijent za PDF sa ugrađenim QR kodom;
 - evidencija spoljnih zahteva, poslovnih grešaka i zasebnih sync cursor-a po firmi i toku.
+- upload XML/PDF priloga sa ograničenjem veličine, SHA-256 proverom i zaštitom putanje;
+- trajni PostgreSQL red poslova i zaseban worker za slanje dokumenata;
+- kontrolisan retry samo za mrežne greške, HTTP 429 i 5xx odgovore, sa oporavkom nakon restarta.
 
 ## Lokalno pokretanje
 
@@ -39,8 +42,8 @@ Nikada ne čuvati produkcijske tajne u Git-u. Bootstrap endpoint se automatski z
 
 ## Sledeći koraci
 
-1. Dodati asinhroni red poslova (Redis + worker), retry sa backoff-om i dead-letter evidenciju.
-2. Dodati S3-kompatibilno skladište (Hetzner Object Storage ili drugo) sa enkripcijom i retention pravilima.
+1. Dodati periodične sync poslove za SEF i eOtpremnice na postojeći PostgreSQL worker.
+2. Prebaciti storage adapter na Hetzner Object Storage sa enkripcijom i retention pravilima.
 3. Implementirati generatore UBL dokumenata kao tipizirane forme, uz obaveznu proveru kroz državne XML validatore.
 4. Uvesti pozivnice, reset lozinke i 2FA pre produkcije.
 5. Dodati PostgreSQL RLS kao drugi sloj tenant izolacije.
@@ -53,5 +56,13 @@ Nikada ne čuvati produkcijske tajne u Git-u. Bootstrap endpoint se automatski z
 3. API vraća jednokratni `invitation_token`; u produkciji ga treba poslati primaocu preko budućeg email servisa, ne zapisivati u log.
 4. Primalac prihvata poziv preko `POST /api/v1/auth/invitations/accept`. Novi korisnik navodi ime i lozinku, a postojeći potvrđuje svoju lozinku.
 5. Token se u bazi čuva samo kao SHA-256 otisak, ima rok trajanja i ne može se ponovo upotrebiti.
+
+## Tok slanja dokumenta
+
+1. Kreirati dokument preko `POST /api/v1/documents`.
+2. Dodati XML kao `multipart/form-data` preko `POST /api/v1/documents/{id}/artifacts`, sa poljem `kind=source_xml` i poljem `file`.
+3. Pozvati `POST /api/v1/documents/{id}/queue`; odgovor sadrži stanje trajnog posla.
+4. Servis `worker` iz `compose.yaml` preuzima posao i šalje ga odgovarajućem servisu koristeći šifrovani ključ izabrane firme.
+5. Rezultat i greške se vide kroz `GET /api/v1/jobs` i dokument API, a svaka promena se auditira.
 
 Detaljnije odluke su u [`docs/ARHITEKTURA.md`](docs/ARHITEKTURA.md), zahtevi u [`docs/MATRICA-ZAHTEVA.md`](docs/MATRICA-ZAHTEVA.md), a tehnički nalazi u [`docs/ZAHTEVI-IZ-DOKUMENTACIJE.md`](docs/ZAHTEVI-IZ-DOKUMENTACIJE.md).

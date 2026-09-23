@@ -5,8 +5,8 @@
 - **Python 3.14 + FastAPI**: tipiziran asinhroni API, jednostavna OpenAPI dokumentacija.
 - **PostgreSQL 17**: pouzdane transakcije, JSONB za izvorni payload, indeksi i particionisanje za veći obim. SQLite nije prihvatljiv za višekorisničku produkciju.
 - **Caddy**: automatski TLS i reverse proxy na Hetzner VPS-u.
-- **S3-kompatibilan storage**: XML/PDF van baze; baza čuva checksum, veličinu, MIME tip i object key.
-- **Redis + worker (sledeća faza)**: slanje, polling i uvoz ne treba izvršavati u HTTP zahtevu.
+- **Storage izvan baze**: XML/PDF su trenutno na trajnom Docker volumenu; baza čuva checksum, veličinu, MIME tip i object key. Interfejs je pripremljen da se produkcija kasnije prebaci na S3-kompatibilni Hetzner Object Storage.
+- **PostgreSQL red + worker**: slanje se ne izvršava u HTTP zahtevu. Poslovi se trajno čuvaju, preuzimaju pomoću `FOR UPDATE SKIP LOCKED`, imaju eksponencijalni retry za 429/5xx i oporavak zastarelog lock-a.
 
 ## Tenant model
 
@@ -17,10 +17,11 @@ Za vrlo velike klijente moguć je kasniji prelazak na zasebnu šemu ili bazu po 
 ## Tok dokumenta
 
 1. Korisnik ili uvoz kreira lokalni dokument sa jedinstvenim idempotency ključem.
-2. Worker validira obavezna polja i zvaničnu XML/JSON šemu.
-3. SEF worker šalje XML sinhrono; eOtpremnice worker šalje multipart zahtev i čuva jedinstveni `RequestId` za asinhronu obradu.
-4. Periodični posao čita SEF promene po vremenu, a eOtpremnice promene po datumu, ulozi i stranici; svaki tok ima svoj cursor/watermark.
-5. Svaka poslovna akcija i promena statusa ulazi u audit.
+2. XML/PDF prilog se upisuje izvan baze u tenant/document putanju, uz SHA-256 i ograničenje veličine.
+3. API kreira trajan `send_document` posao, a worker validira konfiguraciju i šalje dokument.
+4. SEF worker šalje XML sinhrono; eOtpremnice worker šalje multipart zahtev i čuva jedinstveni `RequestId` za asinhronu obradu.
+5. Periodični posao čita SEF promene po vremenu, a eOtpremnice promene po datumu, ulozi i stranici; svaki tok ima svoj cursor/watermark.
+6. Svaka poslovna akcija i promena statusa ulazi u audit.
 
 Izvorni status državnog sistema čuva se kao tekstualna vrednost odvojeno od internog statusa. Time se ne gubi razlika između, na primer, `Sent` u SEF-u i `Sent` iz ugla pošiljaoca eOtpremnice.
 

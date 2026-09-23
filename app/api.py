@@ -1,11 +1,23 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select, text, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.security import (
     create_access_token,
     create_invitation_secret,
@@ -18,8 +30,13 @@ from app.db import get_db
 from app.dependencies import TenantContext, current_user, require_roles, tenant_context
 from app.models import (
     AuditEvent,
+    BackgroundJob,
     BusinessDocument,
+    Direction,
+    DocumentArtifact,
+    DocumentStatus,
     IntegrationCredential,
+    JobStatus,
     Membership,
     MembershipInvitation,
     Organization,
@@ -27,6 +44,7 @@ from app.models import (
     User,
 )
 from app.schemas import (
+    ArtifactOut,
     BootstrapRequest,
     CredentialOut,
     CredentialUpsert,
@@ -36,14 +54,32 @@ from app.schemas import (
     InvitationCreate,
     InvitationIssued,
     InvitationOut,
+    JobOut,
     LoginRequest,
     MembershipOut,
     OrganizationCreate,
     OrganizationOut,
     TokenResponse,
 )
+from app.storage import ArtifactTooLarge, LocalArtifactStore
 
 router = APIRouter(prefix="/api/v1")
+settings = get_settings()
+artifact_store = LocalArtifactStore(settings.artifact_storage_path, settings.max_artifact_bytes)
+
+
+async def _tenant_document(
+    db: AsyncSession, *, document_id: UUID, organization_id: UUID
+) -> BusinessDocument:
+    document = await db.scalar(
+        select(BusinessDocument).where(
+            BusinessDocument.id == document_id,
+            BusinessDocument.organization_id == organization_id,
+        )
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Dokument nije pronađen")
+    return document
 
 
 @router.post("/auth/bootstrap", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -436,12 +472,208 @@ async def get_document(
     context: TenantContext = Depends(tenant_context),
     db: AsyncSession = Depends(get_db),
 ):
-    document = await db.scalar(
-        select(BusinessDocument).where(
-            BusinessDocument.id == document_id,
-            BusinessDocument.organization_id == context.organization_id,
+    return await _tenant_document(
+        db, document_id=document_id, organization_id=context.organization_id
+    )
+
+
+@router.post(
+    "/documents/{document_id}/artifacts",
+    response_model=ArtifactOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_document_artifact(
+    document_id: UUID,
+    kind: str = Form(min_length=1, max_length=50),
+    file: UploadFile = File(),
+    context: TenantContext = Depends(
+        require_roles(Role.owner, Role.admin, Role.accountant, Role.operator)
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    document = await _tenant_document(
+        db, document_id=document_id, organization_id=context.organization_id
+    )
+    content_type = (file.content_type or "application/octet-stream").lower()
+    if content_type not in {"application/xml", "text/xml", "application/pdf"}:
+        await file.close()
+        raise HTTPException(status_code=415, detail="Dozvoljeni su XML i PDF prilozi")
+    try:
+        stored = await artifact_store.put_upload(
+            organization_id=context.organization_id,
+            document_id=document.id,
+            upload=file,
+        )
+    except ArtifactTooLarge as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+
+    existing = await db.scalar(
+        select(DocumentArtifact).where(
+            DocumentArtifact.document_id == document.id,
+            DocumentArtifact.sha256 == stored.sha256,
         )
     )
-    if document is None:
-        raise HTTPException(status_code=404, detail="Dokument nije pronađen")
-    return document
+    if existing is not None:
+        artifact_store.delete(stored.object_key)
+        return existing
+
+    artifact = DocumentArtifact(
+        organization_id=context.organization_id,
+        document_id=document.id,
+        kind=kind,
+        object_key=stored.object_key,
+        content_type=content_type,
+        size_bytes=stored.size_bytes,
+        sha256=stored.sha256,
+    )
+    db.add(artifact)
+    await db.flush()
+    db.add(
+        AuditEvent(
+            organization_id=context.organization_id,
+            actor_user_id=context.user.id,
+            action="document.artifact.upload",
+            entity_type="document_artifact",
+            entity_id=str(artifact.id),
+            details={"document_id": str(document.id), "kind": kind, "sha256": stored.sha256},
+        )
+    )
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        artifact_store.delete(stored.object_key)
+        raise
+    await db.refresh(artifact)
+    return artifact
+
+
+@router.get("/documents/{document_id}/artifacts", response_model=list[ArtifactOut])
+async def list_document_artifacts(
+    document_id: UUID,
+    context: TenantContext = Depends(tenant_context),
+    db: AsyncSession = Depends(get_db),
+):
+    await _tenant_document(db, document_id=document_id, organization_id=context.organization_id)
+    return list(
+        (
+            await db.scalars(
+                select(DocumentArtifact)
+                .where(
+                    DocumentArtifact.document_id == document_id,
+                    DocumentArtifact.organization_id == context.organization_id,
+                )
+                .order_by(DocumentArtifact.created_at)
+            )
+        ).all()
+    )
+
+
+@router.get("/documents/{document_id}/artifacts/{artifact_id}/download")
+async def download_document_artifact(
+    document_id: UUID,
+    artifact_id: UUID,
+    context: TenantContext = Depends(tenant_context),
+    db: AsyncSession = Depends(get_db),
+):
+    artifact = await db.scalar(
+        select(DocumentArtifact).where(
+            DocumentArtifact.id == artifact_id,
+            DocumentArtifact.document_id == document_id,
+            DocumentArtifact.organization_id == context.organization_id,
+        )
+    )
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Prilog nije pronađen")
+    path = artifact_store.resolve(artifact.object_key)
+    if not path.is_file():
+        raise HTTPException(status_code=410, detail="Sadržaj priloga nije dostupan")
+    return FileResponse(
+        path, media_type=artifact.content_type, filename=path.name.split("-", 1)[-1]
+    )
+
+
+@router.post("/documents/{document_id}/queue", response_model=JobOut)
+async def queue_document(
+    document_id: UUID,
+    context: TenantContext = Depends(
+        require_roles(Role.owner, Role.admin, Role.accountant, Role.operator)
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    document = await _tenant_document(
+        db, document_id=document_id, organization_id=context.organization_id
+    )
+    if document.direction != Direction.outbound:
+        raise HTTPException(status_code=409, detail="Samo izlazni dokument može biti poslat")
+    artifact = await db.scalar(
+        select(DocumentArtifact)
+        .where(
+            DocumentArtifact.document_id == document.id,
+            DocumentArtifact.organization_id == context.organization_id,
+            DocumentArtifact.content_type.in_(["application/xml", "text/xml"]),
+        )
+        .order_by(DocumentArtifact.created_at.desc())
+    )
+    if artifact is None:
+        raise HTTPException(status_code=409, detail="Dokument nema XML prilog za slanje")
+
+    job = await db.scalar(
+        select(BackgroundJob).where(
+            BackgroundJob.document_id == document.id,
+            BackgroundJob.kind == "send_document",
+        )
+    )
+    if job is None:
+        job = BackgroundJob(
+            organization_id=context.organization_id,
+            document_id=document.id,
+            kind="send_document",
+            payload={"artifact_id": str(artifact.id)},
+        )
+        db.add(job)
+    elif job.status in {JobStatus.queued, JobStatus.running, JobStatus.retrying}:
+        return job
+    elif job.status == JobStatus.succeeded:
+        raise HTTPException(status_code=409, detail="Dokument je već uspešno poslat")
+    else:
+        job.status = JobStatus.queued
+        job.payload = {"artifact_id": str(artifact.id)}
+        job.attempts = 0
+        job.available_at = datetime.now(UTC)
+        job.finished_at = None
+        job.last_error = None
+
+    document.status = DocumentStatus.queued
+    await db.flush()
+    db.add(
+        AuditEvent(
+            organization_id=context.organization_id,
+            actor_user_id=context.user.id,
+            action="document.queue",
+            entity_type="background_job",
+            entity_id=str(job.id),
+            details={"document_id": str(document.id), "provider": document.provider.value},
+        )
+    )
+    await db.commit()
+    await db.refresh(job)
+    return job
+
+
+@router.get("/jobs", response_model=list[JobOut])
+async def list_jobs(
+    limit: int = Query(default=50, ge=1, le=200),
+    context: TenantContext = Depends(tenant_context),
+    db: AsyncSession = Depends(get_db),
+):
+    return list(
+        (
+            await db.scalars(
+                select(BackgroundJob)
+                .where(BackgroundJob.organization_id == context.organization_id)
+                .order_by(BackgroundJob.created_at.desc())
+                .limit(limit)
+            )
+        ).all()
+    )

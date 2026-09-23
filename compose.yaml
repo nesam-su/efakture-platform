@@ -7,6 +7,22 @@ services:
       db:
         condition: service_healthy
     command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*"]
+    volumes:
+      - artifacts_data:/data/artifacts
+    networks: [private, edge]
+
+  worker:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+      app:
+        condition: service_started
+    command: ["python", "-m", "app.worker"]
+    volumes:
+      - artifacts_data:/data/artifacts
     networks: [private, edge]
 
   db:
@@ -45,9 +61,9 @@ volumes:
   postgres_data:
   caddy_data:
   caddy_config:
+  artifacts_data:
 
 networks:
   private:
     internal: true
   edge:
-

@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr
 
-from app.models import Direction, DocumentStatus, Provider, Role
+from app.models import Direction, DocumentStatus, JobStatus, Provider, Role
 
 
 class BootstrapRequest(BaseModel):
@@ -114,6 +114,32 @@ class DocumentOut(DocumentCreate):
     remote_status: str | None
     remote_status_at: datetime | None
     external_id: str | None
+    last_error: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ArtifactOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    document_id: UUID
+    kind: str
+    content_type: str
+    size_bytes: int
+    sha256: str
+    created_at: datetime
+
+
+class JobOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    document_id: UUID
+    kind: str
+    status: JobStatus
+    attempts: int
+    max_attempts: int
+    available_at: datetime
+    finished_at: datetime | None
     last_error: str | None
     created_at: datetime
     updated_at: datetime
