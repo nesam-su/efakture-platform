@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from uuid import UUID
 
 import jwt
@@ -9,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_access_token
 from app.db import get_db
-from app.models import Membership, Role, User
+from app.models import AuthSession, Membership, Role, User
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -21,24 +22,45 @@ class TenantContext:
     role: Role
 
 
-async def current_user(
+@dataclass(frozen=True)
+class AuthContext:
+    user: User
+    session: AuthSession
+
+
+async def current_auth(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
     db: AsyncSession = Depends(get_db),
-) -> User:
+) -> AuthContext:
     if credentials is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Prijava je obavezna")
     try:
-        user_id = decode_access_token(credentials.credentials)
+        claims = decode_access_token(credentials.credentials)
     except jwt.InvalidTokenError, ValueError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Token nije važeći"
         ) from None
-    user = await db.scalar(select(User).where(User.id == user_id, User.is_active.is_(True)))
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Korisnik nije aktivan"
+    row = (
+        await db.execute(
+            select(User, AuthSession)
+            .join(AuthSession, AuthSession.user_id == User.id)
+            .where(
+                User.id == claims.user_id,
+                User.is_active.is_(True),
+                AuthSession.id == claims.session_id,
+                AuthSession.revoked_at.is_(None),
+                AuthSession.expires_at > datetime.now(UTC),
+            )
         )
-    return user
+    ).one_or_none()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesija nije aktivna")
+    user, session = row
+    return AuthContext(user=user, session=session)
+
+
+async def current_user(auth: AuthContext = Depends(current_auth)) -> User:
+    return auth.user
 
 
 async def tenant_context(

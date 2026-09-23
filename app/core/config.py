@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     credential_encryption_key: str
     database_url: str = "postgresql+asyncpg://efakture:efakture@localhost:5432/efakture"
     access_token_minutes: int = Field(default=30, ge=5, le=1440)
+    login_max_attempts: int = Field(default=5, ge=3, le=20)
+    login_window_seconds: int = Field(default=900, ge=60, le=86400)
+    login_block_seconds: int = Field(default=900, ge=60, le=86400)
     allowed_hosts: Annotated[list[str], NoDecode] = ["localhost", "127.0.0.1"]
     cors_origins: Annotated[list[str], NoDecode] = []
     artifact_storage_path: Path = Path("/data/artifacts")

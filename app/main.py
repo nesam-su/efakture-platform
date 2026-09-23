@@ -24,7 +24,7 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 app = FastAPI(
     title="eFakture i eOtpremnice",
-    version="0.3.0",
+    version="0.4.0",
     docs_url="/api/docs" if settings.env != "production" else None,
     redoc_url=None,
     lifespan=lifespan,
@@ -40,6 +40,21 @@ if settings.cors_origins:
     )
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 app.include_router(router)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; base-uri 'self'; form-action 'self'; "
+        "frame-ancestors 'none'; object-src 'none'; img-src 'self' data:; "
+        "style-src 'self'; script-src 'self'; connect-src 'self'"
+    )
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
 
 
 @app.get("/health/live")

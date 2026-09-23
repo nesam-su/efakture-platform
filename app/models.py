@@ -78,6 +78,34 @@ class User(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class AuthSession(Base, TimestampMixin):
+    __tablename__ = "auth_sessions"
+    __table_args__ = (Index("ix_auth_session_user_active", "user_id", "revoked_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ip_address: Mapped[str | None] = mapped_column(String(64))
+    user_agent: Mapped[str | None] = mapped_column(String(500))
+
+    user: Mapped[User] = relationship()
+
+
+class LoginThrottle(Base):
+    __tablename__ = "login_throttles"
+
+    key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    failed_attempts: Mapped[int] = mapped_column(default=0)
+    window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    blocked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class Organization(Base, TimestampMixin):
     __tablename__ = "organizations"
 

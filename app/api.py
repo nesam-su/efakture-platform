@@ -24,12 +24,22 @@ from app.core.security import (
     encrypt_secret,
     hash_invitation_secret,
     hash_password,
+    login_throttle_key,
     verify_password,
+    verify_password_safe,
 )
 from app.db import get_db
-from app.dependencies import TenantContext, current_user, require_roles, tenant_context
+from app.dependencies import (
+    AuthContext,
+    TenantContext,
+    current_auth,
+    current_user,
+    require_roles,
+    tenant_context,
+)
 from app.models import (
     AuditEvent,
+    AuthSession,
     BackgroundJob,
     BusinessDocument,
     Direction,
@@ -38,6 +48,7 @@ from app.models import (
     ExternalEvent,
     IntegrationCredential,
     JobStatus,
+    LoginThrottle,
     Membership,
     MembershipInvitation,
     Organization,
@@ -48,6 +59,7 @@ from app.models import (
 )
 from app.schemas import (
     ArtifactOut,
+    AuthSessionOut,
     BootstrapRequest,
     CredentialOut,
     CredentialUpsert,
@@ -71,6 +83,22 @@ from app.storage import ArtifactTooLarge, LocalArtifactStore
 router = APIRouter(prefix="/api/v1")
 settings = get_settings()
 artifact_store = LocalArtifactStore(settings.artifact_storage_path, settings.max_artifact_bytes)
+
+
+def _request_ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
+
+
+async def _create_session(db: AsyncSession, user: User, request: Request) -> AuthSession:
+    session = AuthSession(
+        user_id=user.id,
+        expires_at=datetime.now(UTC) + timedelta(minutes=settings.access_token_minutes),
+        ip_address=_request_ip(request),
+        user_agent=request.headers.get("user-agent", "")[:500] or None,
+    )
+    db.add(session)
+    await db.flush()
+    return session
 
 
 async def _tenant_document(
@@ -106,6 +134,7 @@ async def bootstrap(data: BootstrapRequest, request: Request, db: AsyncSession =
     db.add_all([user, organization])
     await db.flush()
     db.add(Membership(organization_id=organization.id, user_id=user.id, role=Role.owner))
+    session = await _create_session(db, user, request)
     db.add(
         AuditEvent(
             organization_id=organization.id,
@@ -121,23 +150,148 @@ async def bootstrap(data: BootstrapRequest, request: Request, db: AsyncSession =
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Sistem je već inicijalizovan") from None
-    return TokenResponse(access_token=create_access_token(user.id))
+    return TokenResponse(access_token=create_access_token(user.id, session.id))
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
-    user = await db.scalar(select(User).where(User.email == data.email.lower()))
-    if (
-        user is None
-        or not user.is_active
-        or not verify_password(data.password.get_secret_value(), user.password_hash)
-    ):
+async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    now = datetime.now(UTC)
+    email = data.email.lower()
+    throttle_key = login_throttle_key(email, _request_ip(request))
+    throttle = await db.scalar(
+        select(LoginThrottle).where(LoginThrottle.key_hash == throttle_key).with_for_update()
+    )
+    if throttle and throttle.blocked_until and throttle.blocked_until > now:
+        retry_after = max(1, int((throttle.blocked_until - now).total_seconds()))
+        raise HTTPException(
+            status_code=429,
+            detail="Previše neuspešnih pokušaja. Pokušajte kasnije.",
+            headers={"Retry-After": str(retry_after)},
+        )
+    user = await db.scalar(select(User).where(User.email == email))
+    password_valid = verify_password_safe(
+        data.password.get_secret_value(), user.password_hash if user else None
+    )
+    if user is None or not user.is_active or not password_valid:
+        if throttle is None:
+            throttle = LoginThrottle(
+                key_hash=throttle_key,
+                failed_attempts=0,
+                window_started_at=now,
+            )
+            db.add(throttle)
+        elif (now - throttle.window_started_at).total_seconds() > settings.login_window_seconds:
+            throttle.failed_attempts = 0
+            throttle.window_started_at = now
+            throttle.blocked_until = None
+        throttle.failed_attempts += 1
+        if throttle.failed_attempts >= settings.login_max_attempts:
+            throttle.blocked_until = now + timedelta(seconds=settings.login_block_seconds)
+        await db.commit()
         raise HTTPException(status_code=401, detail="Pogrešan email ili lozinka")
-    return TokenResponse(access_token=create_access_token(user.id))
+    if throttle is not None:
+        await db.delete(throttle)
+    session = await _create_session(db, user, request)
+    db.add(
+        AuditEvent(
+            actor_user_id=user.id,
+            action="auth.login",
+            entity_type="auth_session",
+            entity_id=str(session.id),
+            ip_address=_request_ip(request),
+        )
+    )
+    await db.commit()
+    return TokenResponse(access_token=create_access_token(user.id, session.id))
+
+
+@router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    request: Request,
+    auth: AuthContext = Depends(current_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    auth.session.revoked_at = datetime.now(UTC)
+    db.add(
+        AuditEvent(
+            actor_user_id=auth.user.id,
+            action="auth.logout",
+            entity_type="auth_session",
+            entity_id=str(auth.session.id),
+            ip_address=_request_ip(request),
+        )
+    )
+    await db.commit()
+
+
+@router.get("/auth/sessions", response_model=list[AuthSessionOut])
+async def list_auth_sessions(
+    auth: AuthContext = Depends(current_auth), db: AsyncSession = Depends(get_db)
+):
+    sessions = list(
+        (
+            await db.scalars(
+                select(AuthSession)
+                .where(AuthSession.user_id == auth.user.id)
+                .order_by(AuthSession.created_at.desc())
+                .limit(50)
+            )
+        ).all()
+    )
+    return [
+        AuthSessionOut(
+            id=session.id,
+            current=session.id == auth.session.id,
+            ip_address=session.ip_address,
+            user_agent=session.user_agent,
+            expires_at=session.expires_at,
+            revoked_at=session.revoked_at,
+            created_at=session.created_at,
+        )
+        for session in sessions
+    ]
+
+
+@router.delete("/auth/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_auth_session(
+    session_id: UUID,
+    auth: AuthContext = Depends(current_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    session = await db.scalar(
+        select(AuthSession).where(
+            AuthSession.id == session_id,
+            AuthSession.user_id == auth.user.id,
+        )
+    )
+    if session is None:
+        raise HTTPException(status_code=404, detail="Sesija nije pronađena")
+    session.revoked_at = datetime.now(UTC)
+    await db.commit()
+
+
+@router.post("/auth/logout-all", status_code=status.HTTP_204_NO_CONTENT)
+async def logout_all_sessions(
+    auth: AuthContext = Depends(current_auth), db: AsyncSession = Depends(get_db)
+):
+    sessions = (
+        await db.scalars(
+            select(AuthSession).where(
+                AuthSession.user_id == auth.user.id,
+                AuthSession.revoked_at.is_(None),
+            )
+        )
+    ).all()
+    now = datetime.now(UTC)
+    for session in sessions:
+        session.revoked_at = now
+    await db.commit()
 
 
 @router.post("/auth/invitations/accept", response_model=TokenResponse)
-async def accept_invitation(data: InvitationAccept, db: AsyncSession = Depends(get_db)):
+async def accept_invitation(
+    data: InvitationAccept, request: Request, db: AsyncSession = Depends(get_db)
+):
     now = datetime.now(UTC)
     invitation = await db.scalar(
         select(MembershipInvitation)
@@ -193,8 +347,9 @@ async def accept_invitation(data: InvitationAccept, db: AsyncSession = Depends(g
             details={"role": invitation.role.value},
         )
     )
+    session = await _create_session(db, user, request)
     await db.commit()
-    return TokenResponse(access_token=create_access_token(user.id))
+    return TokenResponse(access_token=create_access_token(user.id, session.id))
 
 
 @router.get("/organizations", response_model=list[OrganizationOut])

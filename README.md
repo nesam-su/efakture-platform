@@ -28,6 +28,8 @@ Integracioni sloj je mapiran prema lokalnoj dokumentaciji od 31. jula i 21. avgu
 - idempotentni dnevnik spoljnih događaja i automatsko preuzimanje XML-a novog dokumenta.
 - responsive radni panel za dokumente, poslove, događaje, korisnike i integracije;
 - kreiranje dokumenta, XML upload, slanje u red i preuzimanje priloga bez Swagger-a.
+- JWT vezan za opozivu serversku sesiju, pregled uređaja i bezbedna odjava;
+- distribuirana PostgreSQL zaštita prijave i sigurnosna HTTP/CSP zaglavlja.
 
 ## Lokalno pokretanje
 
@@ -50,7 +52,7 @@ Nikada ne čuvati produkcijske tajne u Git-u. Bootstrap endpoint se automatski z
 1. Prebaciti storage adapter na Hetzner Object Storage sa enkripcijom i retention pravilima.
 2. Dodati obradu eOtpremnice `ApplicationResponse` XML događaja i njihovo vezivanje za izvorni dokument.
 3. Implementirati generatore UBL dokumenata kao tipizirane forme, uz obaveznu proveru kroz državne XML validatore.
-4. Uvesti pozivnice, reset lozinke i 2FA pre produkcije.
+4. Dodati reset lozinke i 2FA pre produkcije; pozivnice i opozive sesije su implementirane.
 5. Dodati PostgreSQL RLS kao drugi sloj tenant izolacije.
 6. Tek uz zasebne sandbox ključeve izvršiti end-to-end testove prema demo okruženjima.
 
@@ -81,5 +83,7 @@ Worker periodično obrađuje svaki aktivni API ključ firme. SEF tokovi koriste 
 ## Web interfejs
 
 Nakon prijave korisnik bira firmu kojoj pripada. Interfejs automatski šalje `X-Organization-Id` uz svaki tenant zahtev i prikazuje akcije prema ulozi korisnika. Vlasnik i administrator mogu da povežu servise i izdaju pozivnice; knjigovođa i operater mogu da kreiraju i šalju dokumente; korisnik sa ulogom pregleda nema akcije izmene.
+
+JWT sadrži identifikator serverske sesije. Svaki zaštićeni zahtev proverava da sesija nije istekla ili opozvana. Korisnik može pregledati svoje aktivne uređaje i opozvati pojedinačnu sesiju; odjava opoziva trenutnu sesiju pre brisanja tokena iz browsera.
 
 Detaljnije odluke su u [`docs/ARHITEKTURA.md`](docs/ARHITEKTURA.md), zahtevi u [`docs/MATRICA-ZAHTEVA.md`](docs/MATRICA-ZAHTEVA.md), a tehnički nalazi u [`docs/ZAHTEVI-IZ-DOKUMENTACIJE.md`](docs/ZAHTEVI-IZ-DOKUMENTACIJE.md).

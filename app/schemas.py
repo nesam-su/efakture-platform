@@ -26,6 +26,16 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class AuthSessionOut(BaseModel):
+    id: UUID
+    current: bool
+    ip_address: str | None
+    user_agent: str | None
+    expires_at: datetime
+    revoked_at: datetime | None
+    created_at: datetime
+
+
 class OrganizationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID

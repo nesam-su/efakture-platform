@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
@@ -23,6 +25,31 @@ def test_invitation_secret_is_stored_only_as_hash():
     assert hash_invitation_secret(secret) == digest
 
 
+def test_access_token_binds_user_to_revocable_session(monkeypatch):
+    monkeypatch.setenv("APP_SECRET_KEY", "t" * 48)
+    monkeypatch.setenv("APP_CREDENTIAL_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    from app.core.config import get_settings
+    from app.core.security import create_access_token, decode_access_token
+
+    get_settings.cache_clear()
+    user_id, session_id = uuid4(), uuid4()
+    claims = decode_access_token(create_access_token(user_id, session_id))
+    assert claims.user_id == user_id
+    assert claims.session_id == session_id
+    get_settings.cache_clear()
+
+
+def test_login_throttle_key_is_normalized_and_ip_scoped():
+    from app.core.security import login_throttle_key
+
+    assert login_throttle_key(" USER@example.rs ", "127.0.0.1") == login_throttle_key(
+        "user@example.rs", "127.0.0.1"
+    )
+    assert login_throttle_key("user@example.rs", "127.0.0.1") != login_throttle_key(
+        "user@example.rs", "127.0.0.2"
+    )
+
+
 def test_public_pages(monkeypatch):
     monkeypatch.setenv("APP_SECRET_KEY", "x" * 48)
     monkeypatch.setenv("APP_CREDENTIAL_ENCRYPTION_KEY", Fernet.generate_key().decode())
@@ -38,6 +65,8 @@ def test_public_pages(monkeypatch):
     assert client.get("/static/app.css").status_code == 200
     assert client.get("/static/app.js").status_code == 200
     assert client.get("/static/favicon.svg").status_code == 200
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
 
 
 def test_csv_environment_lists(monkeypatch):

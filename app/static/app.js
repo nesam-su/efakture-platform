@@ -1,6 +1,6 @@
 const tokenKey = "edokumenti_access_token";
 const organizationKey = "edokumenti_organization_id";
-const state = {organizations: [], organization: null, documents: [], jobs: [], events: [], members: [], integrations: []};
+const state = {organizations: [], organization: null, documents: [], jobs: [], events: [], members: [], sessions: [], integrations: []};
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -87,7 +87,7 @@ async function initializeApp() {
 }
 
 async function loadWorkspace() {
-  const loaders = [loadDocuments(), loadJobs(), loadEvents(), loadMembers(), loadIntegrations()];
+  const loaders = [loadDocuments(), loadJobs(), loadEvents(), loadMembers(), loadSessions(), loadIntegrations()];
   const results = await Promise.allSettled(loaders);
   const failed = results.find(result => result.status === "rejected");
   if (failed) showToast(failed.reason.message, true);
@@ -161,6 +161,13 @@ async function loadMembers() {
   $("#members-list").innerHTML = state.members.map(member => `<div class="list-row"><div><strong>${escapeHtml(member.full_name)}</strong><small>${escapeHtml(member.email)}</small></div><div><strong>${escapeHtml(roleNames[member.role] || member.role)}</strong><small>Uloga u firmi</small></div><div><small>${member.is_active ? "Aktivan nalog" : "Neaktivan nalog"}</small></div><span class="status ${member.is_active ? "accepted" : "error"}">${member.is_active ? "Aktivan" : "Neaktivan"}</span></div>`).join("");
 }
 
+async function loadSessions() {
+  state.sessions = await api("/api/v1/auth/sessions", {tenant:false});
+  const active = state.sessions.filter(session => !session.revoked_at);
+  $("#sessions-list").innerHTML = active.length ? active.map(session => `<div class="list-row"><div><strong>${session.current ? "Trenutna sesija" : "Drugi uređaj"}</strong><small>${escapeHtml(session.user_agent || "Nepoznat pregledač")}</small></div><div><strong>${escapeHtml(session.ip_address || "Nepoznata IP adresa")}</strong><small>Prijava ${formatDate(session.created_at)}</small></div><div><small>Važi do ${formatDate(session.expires_at)}</small></div>${session.current ? '<span class="status accepted">Aktivna</span>' : `<button class="secondary revoke-session" data-session-id="${session.id}">Opozovi</button>`}</div>`).join("") : '<div class="empty-state"><strong>Nema aktivnih sesija</strong></div>';
+  $$(".revoke-session").forEach(button => button.onclick = async () => { try { await api(`/api/v1/auth/sessions/${button.dataset.sessionId}`, {method:"DELETE", tenant:false}); showToast("Sesija je opozvana."); await loadSessions(); } catch (error) { showToast(error.message, true); } });
+}
+
 async function loadIntegrations() {
   state.integrations = await api("/api/v1/integrations");
   const definitions = [{provider:"sef", name:"SEF eFakture", base_url:"https://efaktura.mfin.gov.rs"},{provider:"eotpremnice", name:"eOtpremnice", base_url:"https://api.eotpremnica.mfin.gov.rs"}];
@@ -216,7 +223,8 @@ $("#invite-button").onclick = () => {
   $("#invite-dialog").showModal();
 };
 $("#refresh-button").onclick = async () => { await loadWorkspace(); showToast("Podaci su osveženi."); };
-$("#logout").onclick = clearSession; $("#menu-button").onclick = () => $(".sidebar").classList.toggle("open");
+$("#logout").onclick = async () => { try { await api("/api/v1/auth/logout", {method:"POST", tenant:false}); } finally { clearSession(); } };
+$("#menu-button").onclick = () => $(".sidebar").classList.toggle("open");
 $$('.close-dialog').forEach(button => button.onclick = () => button.closest("dialog").close());
 $$('.nav-item[data-view]').forEach(button => button.onclick = () => showView(button.dataset.view));
 [$("#document-search"), $("#provider-filter"), $("#status-filter")].forEach(control => control.addEventListener("input", renderDocuments));
