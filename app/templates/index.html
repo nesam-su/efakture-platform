@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="sr-Latn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>eDokumenti</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="mark">eD</span><strong>eDokumenti</strong></div>
+    <button class="secondary" id="logout" hidden>Odjava</button>
+  </header>
+  <main>
+    <section class="hero">
+      <p class="eyebrow">SEF · eOtpremnice</p>
+      <h1>Poslovni dokumenti na jednom mestu.</h1>
+      <p>Siguran višekorisnički rad, više firmi i potpuna evidencija svake promene.</p>
+    </section>
+    <section class="card" id="login-card">
+      <h2>Prijava</h2>
+      <form id="login-form">
+        <label>Email<input name="email" type="email" autocomplete="username" required></label>
+        <label>Lozinka<input name="password" type="password" autocomplete="current-password" required></label>
+        <button>Prijavi se</button>
+      </form>
+      <p class="error" id="login-error"></p>
+      <details>
+        <summary>Prvo pokretanje</summary>
+        <p>Početni administrator se kreira preko bezbednog <code>/api/v1/auth/bootstrap</code> poziva.</p>
+      </details>
+    </section>
+    <section class="dashboard" id="dashboard" hidden>
+      <div class="card wide">
+        <div class="row"><div><p class="eyebrow">RADNI PROSTOR</p><h2>Izaberite firmu</h2></div></div>
+        <div id="organizations" class="org-grid"></div>
+      </div>
+      <div class="stats">
+        <div class="card"><span>Pristup</span><strong>Po ulogama</strong></div>
+        <div class="card"><span>Podaci</span><strong>Odvojeni po firmi</strong></div>
+        <div class="card"><span>Istorija</span><strong>Audit evidencija</strong></div>
+      </div>
+    </section>
+  </main>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
+
