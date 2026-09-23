@@ -41,6 +41,9 @@ async def test_eotpremnice_submit_and_pull_contract():
             assert b"RequestId" in body and b"REQ-2026-001" in body
             assert b"<DespatchAdvice/>" in body
             return httpx.Response(202, json={"accepted": True})
+        if request.url.path == "/public/documents/customers/changes":
+            assert request.url.params["requestId"] == "REQ-2026-001"
+            return httpx.Response(200, json={"items": [], "totalCount": 0, "pageIndex": 0})
         assert request.url.path == "/public/documents/requests/changes"
         assert request.url.params["date"] == "2026-09-23"
         assert request.url.params["page"] == "0"
@@ -52,9 +55,10 @@ async def test_eotpremnice_submit_and_pull_contract():
     try:
         await client.submit_document("<DespatchAdvice/>", request_id="REQ-2026-001")
         changes = await client.request_changes(date(2026, 9, 23))
+        await client.role_changes("customers", date(2026, 9, 23), request_id="REQ-2026-001")
     finally:
         await client.aclose()
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert changes["totalCount"] == 0
 
 

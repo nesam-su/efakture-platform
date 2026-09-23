@@ -143,3 +143,27 @@ class JobOut(BaseModel):
     last_error: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class ExternalEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    provider: Provider
+    stream: str
+    external_event_id: str
+    event_type: str
+    occurred_at: datetime | None
+    request_id: str | None
+    data: dict
+    created_at: datetime
+
+
+class SyncCursorOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    provider: Provider
+    stream: str
+    watermark: datetime | None
+    page: int
+    cursor_data: dict
+    updated_at: datetime

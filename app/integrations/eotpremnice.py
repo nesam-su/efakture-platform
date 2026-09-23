@@ -59,11 +59,21 @@ class EotpremniceClient(ApiKeyClient):
         response = await self._request("GET", "/public/documents/requests/changes", params=params)
         return response.json()
 
-    async def role_changes(self, role: Role, changed_on: date, *, page: int = 0) -> dict[str, Any]:
+    async def role_changes(
+        self,
+        role: Role,
+        changed_on: date,
+        *,
+        page: int = 0,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, str | int] = {"date": changed_on.isoformat(), "page": page}
+        if request_id:
+            params["requestId"] = request_id
         response = await self._request(
             "GET",
             f"/public/documents/{role}/changes",
-            params={"date": changed_on.isoformat(), "page": page},
+            params=params,
         )
         return response.json()
 

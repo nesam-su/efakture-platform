@@ -23,6 +23,9 @@ Integracioni sloj je mapiran prema lokalnoj dokumentaciji od 31. jula i 21. avgu
 - upload XML/PDF priloga sa ograničenjem veličine, SHA-256 proverom i zaštitom putanje;
 - trajni PostgreSQL red poslova i zaseban worker za slanje dokumenata;
 - kontrolisan retry samo za mrežne greške, HTTP 429 i 5xx odgovore, sa oporavkom nakon restarta.
+- automatska SEF sinhronizacija izlaznih i ulaznih faktura sa vremenskim preklapanjem;
+- paginirana eOtpremnice sinhronizacija zahteva i supplier/customer/carrier tokova;
+- idempotentni dnevnik spoljnih događaja i automatsko preuzimanje XML-a novog dokumenta.
 
 ## Lokalno pokretanje
 
@@ -42,8 +45,8 @@ Nikada ne čuvati produkcijske tajne u Git-u. Bootstrap endpoint se automatski z
 
 ## Sledeći koraci
 
-1. Dodati periodične sync poslove za SEF i eOtpremnice na postojeći PostgreSQL worker.
-2. Prebaciti storage adapter na Hetzner Object Storage sa enkripcijom i retention pravilima.
+1. Prebaciti storage adapter na Hetzner Object Storage sa enkripcijom i retention pravilima.
+2. Dodati obradu eOtpremnice `ApplicationResponse` XML događaja i njihovo vezivanje za izvorni dokument.
 3. Implementirati generatore UBL dokumenata kao tipizirane forme, uz obaveznu proveru kroz državne XML validatore.
 4. Uvesti pozivnice, reset lozinke i 2FA pre produkcije.
 5. Dodati PostgreSQL RLS kao drugi sloj tenant izolacije.
@@ -64,5 +67,13 @@ Nikada ne čuvati produkcijske tajne u Git-u. Bootstrap endpoint se automatski z
 3. Pozvati `POST /api/v1/documents/{id}/queue`; odgovor sadrži stanje trajnog posla.
 4. Servis `worker` iz `compose.yaml` preuzima posao i šalje ga odgovarajućem servisu koristeći šifrovani ključ izabrane firme.
 5. Rezultat i greške se vide kroz `GET /api/v1/jobs` i dokument API, a svaka promena se auditira.
+
+## Automatska sinhronizacija
+
+Worker periodično obrađuje svaki aktivni API ključ firme. SEF tokovi koriste poseban vremenski cursor za prodajne i ulazne fakture. eOtpremnice koriste zaseban datum/stranicu za zahteve, pošiljaoca, primaoca i prevoznika. Događaj se jedinstveno prepoznaje po firmi, servisu, toku i udaljenom identifikatoru, pa ponovno čitanje preklopljenog perioda ne pravi duplikate.
+
+- `GET /api/v1/external-events` prikazuje primljene događaje.
+- `GET /api/v1/sync-cursors` prikazuje trenutno mesto svakog toka.
+- Novi udaljeni dokument automatski dobija lokalni zapis i `remote_xml` prilog.
 
 Detaljnije odluke su u [`docs/ARHITEKTURA.md`](docs/ARHITEKTURA.md), zahtevi u [`docs/MATRICA-ZAHTEVA.md`](docs/MATRICA-ZAHTEVA.md), a tehnički nalazi u [`docs/ZAHTEVI-IZ-DOKUMENTACIJE.md`](docs/ZAHTEVI-IZ-DOKUMENTACIJE.md).

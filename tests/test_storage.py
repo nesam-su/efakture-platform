@@ -44,3 +44,16 @@ async def test_artifact_store_removes_oversized_partial_file(tmp_path):
             upload=upload("large.xml", b"12345"),
         )
     assert list(tmp_path.rglob("*.*")) == []
+
+
+@pytest.mark.asyncio
+async def test_artifact_store_can_persist_downloaded_bytes(tmp_path):
+    store = LocalArtifactStore(tmp_path, max_bytes=1024)
+    stored = await store.put_bytes(
+        organization_id=uuid4(),
+        document_id=uuid4(),
+        filename="remote.xml",
+        content=b"<Invoice id='42'/>",
+    )
+    assert stored.size_bytes == 18
+    assert await store.read(stored.object_key) == b"<Invoice id='42'/>"

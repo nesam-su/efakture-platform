@@ -29,6 +29,7 @@ from app.models import (
     Provider,
 )
 from app.storage import LocalArtifactStore
+from app.synchronization import run_sync_cycle
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("efakture.worker")
@@ -231,7 +232,7 @@ async def process_job(job_id: UUID) -> None:
         await fail_job(job_id, exc)
 
 
-async def run() -> None:
+async def run_jobs() -> None:
     logger.info("Worker %s started", worker_id)
     while True:
         job_id = await claim_job()
@@ -239,6 +240,18 @@ async def run() -> None:
             await asyncio.sleep(settings.worker_poll_seconds)
             continue
         await process_job(job_id)
+
+
+async def run_synchronization() -> None:
+    while True:
+        imported = await run_sync_cycle()
+        if imported:
+            logger.info("Imported %s new external events", imported)
+        await asyncio.sleep(settings.sync_interval_seconds)
+
+
+async def run() -> None:
+    await asyncio.gather(run_jobs(), run_synchronization())
 
 
 if __name__ == "__main__":

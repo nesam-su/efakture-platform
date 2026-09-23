@@ -35,12 +35,15 @@ from app.models import (
     Direction,
     DocumentArtifact,
     DocumentStatus,
+    ExternalEvent,
     IntegrationCredential,
     JobStatus,
     Membership,
     MembershipInvitation,
     Organization,
+    Provider,
     Role,
+    SyncCursor,
     User,
 )
 from app.schemas import (
@@ -50,6 +53,7 @@ from app.schemas import (
     CredentialUpsert,
     DocumentCreate,
     DocumentOut,
+    ExternalEventOut,
     InvitationAccept,
     InvitationCreate,
     InvitationIssued,
@@ -59,6 +63,7 @@ from app.schemas import (
     MembershipOut,
     OrganizationCreate,
     OrganizationOut,
+    SyncCursorOut,
     TokenResponse,
 )
 from app.storage import ArtifactTooLarge, LocalArtifactStore
@@ -674,6 +679,36 @@ async def list_jobs(
                 .where(BackgroundJob.organization_id == context.organization_id)
                 .order_by(BackgroundJob.created_at.desc())
                 .limit(limit)
+            )
+        ).all()
+    )
+
+
+@router.get("/external-events", response_model=list[ExternalEventOut])
+async def list_external_events(
+    limit: int = Query(default=100, ge=1, le=500),
+    provider: Provider | None = None,
+    context: TenantContext = Depends(tenant_context),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(ExternalEvent).where(ExternalEvent.organization_id == context.organization_id)
+    if provider is not None:
+        query = query.where(ExternalEvent.provider == provider)
+    query = query.order_by(ExternalEvent.occurred_at.desc().nullslast(), ExternalEvent.id.desc())
+    return list((await db.scalars(query.limit(limit))).all())
+
+
+@router.get("/sync-cursors", response_model=list[SyncCursorOut])
+async def list_sync_cursors(
+    context: TenantContext = Depends(require_roles(Role.owner, Role.admin, Role.accountant)),
+    db: AsyncSession = Depends(get_db),
+):
+    return list(
+        (
+            await db.scalars(
+                select(SyncCursor)
+                .where(SyncCursor.organization_id == context.organization_id)
+                .order_by(SyncCursor.provider, SyncCursor.stream)
             )
         ).all()
     )

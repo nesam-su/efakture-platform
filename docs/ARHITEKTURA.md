@@ -23,6 +23,8 @@ Za vrlo velike klijente moguć je kasniji prelazak na zasebnu šemu ili bazu po 
 5. Periodični posao čita SEF promene po vremenu, a eOtpremnice promene po datumu, ulozi i stranici; svaki tok ima svoj cursor/watermark.
 6. Svaka poslovna akcija i promena statusa ulazi u audit.
 
+Svaki spoljni događaj se pre upisa deduplikuje kombinacijom `(organization_id, provider, stream, external_event_id)`. SEF cursor namerno ponavlja mali vremenski interval, dok eOtpremnice cursor čuva datum, broj strane i broj obrađenih stavki. Time kratkotrajni prekid workera ne ostavlja rupu u sinhronizaciji.
+
 Izvorni status državnog sistema čuva se kao tekstualna vrednost odvojeno od internog statusa. Time se ne gubi razlika između, na primer, `Sent` u SEF-u i `Sent` iz ugla pošiljaoca eOtpremnice.
 
 ## Kapacitet i baza

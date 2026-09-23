@@ -149,6 +149,7 @@ class BusinessDocument(Base, TimestampMixin):
     __tablename__ = "business_documents"
     __table_args__ = (
         UniqueConstraint("organization_id", "provider", "idempotency_key"),
+        UniqueConstraint("organization_id", "provider", "external_id"),
         Index("ix_document_org_created", "organization_id", "created_at"),
         Index("ix_document_org_status", "organization_id", "status"),
         Index("ix_document_external", "provider", "external_id"),
@@ -212,6 +213,26 @@ class SyncCursor(Base, TimestampMixin):
     watermark: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     page: Mapped[int] = mapped_column(default=0)
     cursor_data: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+
+class ExternalEvent(Base, TimestampMixin):
+    __tablename__ = "external_events"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "provider", "stream", "external_event_id"),
+        Index("ix_external_event_org_time", "organization_id", "occurred_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    provider: Mapped[Provider] = mapped_column(Enum(Provider, name="external_event_provider"))
+    stream: Mapped[str] = mapped_column(String(120))
+    external_event_id: Mapped[str] = mapped_column(String(200))
+    event_type: Mapped[str] = mapped_column(String(160))
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    request_id: Mapped[str | None] = mapped_column(String(128))
+    data: Mapped[dict] = mapped_column(JSONB, default=dict)
 
 
 class DocumentArtifact(Base, TimestampMixin):

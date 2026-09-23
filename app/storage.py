@@ -67,5 +67,23 @@ class LocalArtifactStore:
         async with await anyio.open_file(self.resolve(object_key), "rb") as source:
             return await source.read()
 
+    async def put_bytes(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        document_id: uuid.UUID,
+        filename: str,
+        content: bytes,
+    ) -> StoredArtifact:
+        if len(content) > self.max_bytes:
+            raise ArtifactTooLarge(f"Prilog je veći od dozvoljenih {self.max_bytes} bajtova")
+        safe_name = SAFE_FILENAME.sub("_", Path(filename).name).strip("._") or "artifact.bin"
+        object_key = f"{organization_id}/{document_id}/{uuid.uuid4().hex}-{safe_name}"
+        destination = self.resolve(object_key)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        async with await anyio.open_file(destination, "wb") as output:
+            await output.write(content)
+        return StoredArtifact(object_key, len(content), hashlib.sha256(content).hexdigest())
+
     def delete(self, object_key: str) -> None:
         self.resolve(object_key).unlink(missing_ok=True)

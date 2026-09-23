@@ -22,6 +22,7 @@
 | eOtpremnice | DespatchAdvice, ReceiptAdvice i ApplicationResponse UBL 1.1.0 |
 | Formati | SEF `application/xml`; eOtpremnice `multipart/form-data` sa `RequestId` i XML fajlom |
 | Sinhronizacija | SEF promene po vremenu; eOtpremnice PULL po datumu/stranici i PUSH pretplata |
+| Deduplikacija događaja | Jedinstven događaj po firmi, servisu, toku i udaljenom ID-u; cursor po svakom toku |
 | Greške | eOtpremnice BusinessMessages i RFC 9110 offline greške; čuvaju se strukturirano |
 | Statusi | Statusi se čuvaju kao izvorne vrednosti, odvojeno od internog workflow statusa |
 | Uloge | eOtpremnice tokovi su odvojeni na supplier, customer i carrier |
