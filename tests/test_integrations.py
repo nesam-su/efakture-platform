@@ -3,8 +3,21 @@ from datetime import UTC, date, datetime
 import httpx
 import pytest
 
+from app.integrations.environments import integration_base_url
 from app.integrations.eotpremnice import EotpremniceClient
 from app.integrations.sef import SefClient
+from app.models import Provider
+
+
+def test_official_demo_and_production_endpoints_are_fixed():
+    assert integration_base_url(Provider.sef, "demo") == "https://demoefaktura.mfin.gov.rs"
+    assert integration_base_url(Provider.sef, "production") == "https://efaktura.mfin.gov.rs"
+    assert integration_base_url(Provider.eotpremnice, "demo") == (
+        "https://api.demoeotpremnica.mfin.gov.rs"
+    )
+    assert integration_base_url(Provider.eotpremnice, "production") == (
+        "https://api.eotpremnica.mfin.gov.rs"
+    )
 
 
 @pytest.mark.asyncio

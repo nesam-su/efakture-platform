@@ -7,6 +7,7 @@ import httpx
 
 from app.integrations.http import ApiKeyClient, json_or_text
 
+SEF_DEMO_URL = "https://demoefaktura.mfin.gov.rs"
 SEF_PRODUCTION_URL = "https://efaktura.mfin.gov.rs"
 
 

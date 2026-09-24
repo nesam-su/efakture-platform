@@ -44,6 +44,7 @@ from app.dependencies import (
     require_roles,
     tenant_context,
 )
+from app.integrations.environments import integration_base_url
 from app.mail import enqueue_email
 from app.models import (
     AuditEvent,
@@ -769,6 +770,8 @@ async def upsert_credential(
     context: TenantContext = Depends(require_roles(Role.owner, Role.admin)),
     db: AsyncSession = Depends(get_db),
 ):
+    base_url = integration_base_url(data.provider, data.environment)
+    credential_settings = {**data.settings, "environment": data.environment}
     credential = await db.scalar(
         select(IntegrationCredential).where(
             IntegrationCredential.organization_id == context.organization_id,
@@ -779,15 +782,15 @@ async def upsert_credential(
         credential = IntegrationCredential(
             organization_id=context.organization_id,
             provider=data.provider,
-            base_url=data.base_url,
+            base_url=base_url,
             encrypted_api_key=encrypt_secret(data.api_key.get_secret_value()),
-            settings=data.settings,
+            settings=credential_settings,
         )
         db.add(credential)
     else:
-        credential.base_url = data.base_url
+        credential.base_url = base_url
         credential.encrypted_api_key = encrypt_secret(data.api_key.get_secret_value())
-        credential.settings = data.settings
+        credential.settings = credential_settings
     await db.flush()
     db.add(
         AuditEvent(
@@ -796,7 +799,7 @@ async def upsert_credential(
             action="integration.upsert",
             entity_type="integration_credential",
             entity_id=str(credential.id),
-            details={"provider": data.provider.value},
+            details={"provider": data.provider.value, "environment": data.environment},
         )
     )
     await db.commit()

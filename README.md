@@ -34,6 +34,7 @@ Integracioni sloj je mapiran prema lokalnoj dokumentaciji od 31. jula i 21. avgu
 - trajni PostgreSQL email outbox sa SMTP STARTTLS slanjem i kontrolisanim ponavljanjem;
 - TOTP dvofaktorska prijava, zaštita od ponovne upotrebe koda i jednokratni rezervni kodovi.
 - kompletan web tok za dodavanje firme, email poziv i prihvatanje poziva za novog ili postojećeg korisnika.
+- bezbedan izbor Demo/Produkcija za svaku integraciju, sa Demo okruženjem kao podrazumevanim i fiksnim zvaničnim API adresama.
 
 ## Lokalno pokretanje
 
@@ -77,6 +78,16 @@ Brisanje isključivo lokalnih test volumena radi potpuno svežeg testa:
 5. Kreirati prvog administratora jednim pozivom na `POST /api/v1/auth/bootstrap` (Swagger je na `/api/docs` u development režimu).
 
 Nikada ne čuvati produkcijske tajne u Git-u. Bootstrap endpoint se automatski zatvara nakon prvog korisnika.
+
+## Demo nalozi državnih servisa
+
+Lokalni administratorski nalog aplikacije kreira se automatski, ali SEF i eOtpremnice demo naloge aplikacija ne može da kreira umesto korisnika. Za oba servisa registracija ide preko eID-a, a API ključ se generiše u podešavanjima odgovarajućeg demo portala. Ključ je vezan za okruženje u kome je izdat i ne treba ga upisivati u `.env`, Git ili dokumentaciju.
+
+1. SEF demo portal: `https://demoefaktura.mfin.gov.rs/` - u delu `Podešavanja / API menadžment` generisati ključ i aktivirati API status.
+2. eOtpremnice demo portal: `https://demoeotpremnica.mfin.gov.rs/` - registrovati subjekt preko eID-a i u podešavanjima generisati demo API ključ.
+3. U ovoj aplikaciji otvoriti `Integracije`, ostaviti okruženje `Demo` i nalepiti odgovarajući ključ za trenutno izabranu firmu.
+
+API adrese se biraju na serveru iz fiksne liste zvaničnih Demo/Produkcija adresa. Time se sprečava da korisnički unos preusmeri worker na proizvoljan server. Izbor produkcije zahteva dodatnu potvrdu u interfejsu.
 
 ## Sledeći koraci
 

@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr
 
+from app.integrations.environments import IntegrationEnvironment
 from app.models import Direction, DocumentStatus, JobStatus, Provider, Role
 
 
@@ -121,7 +122,7 @@ class InvitationAccept(BaseModel):
 
 class CredentialUpsert(BaseModel):
     provider: Provider
-    base_url: str = Field(pattern=r"^https://", max_length=500)
+    environment: IntegrationEnvironment = "demo"
     api_key: SecretStr
     settings: dict = Field(default_factory=dict)
 

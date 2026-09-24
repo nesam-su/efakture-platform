@@ -175,17 +175,19 @@ async function loadSessions() {
 
 async function loadIntegrations() {
   state.integrations = await api("/api/v1/integrations");
-  const definitions = [{provider:"sef", name:"SEF eFakture", base_url:"https://efaktura.mfin.gov.rs"},{provider:"eotpremnice", name:"eOtpremnice", base_url:"https://api.eotpremnica.mfin.gov.rs"}];
+  const definitions = [{provider:"sef", name:"SEF eFakture"},{provider:"eotpremnice", name:"eOtpremnice"}];
   $("#integration-list").innerHTML = definitions.map(item => {
     const existing = state.integrations.find(value => value.provider === item.provider); const disabled = canAdminister() ? "" : "disabled";
-    return `<article class="panel integration-card"><h3>${item.name}</h3><span class="integration-state ${existing ? "connected" : ""}">${existing ? "Povezano" : "Nije povezano"}</span><form class="integration-form" data-provider="${item.provider}"><label>API adresa<input name="base_url" type="url" value="${escapeHtml(existing?.base_url || item.base_url)}" required ${disabled}></label><label>${existing ? "Novi API ključ (za zamenu)" : "API ključ"}<input name="api_key" type="password" autocomplete="new-password" required ${disabled}></label><button class="primary" ${disabled}>${existing ? "Zameni ključ" : "Poveži servis"}</button></form></article>`;
+    const environment = existing?.settings?.environment || (existing?.base_url.includes("demo") ? "demo" : "production");
+    return `<article class="panel integration-card"><h3>${item.name}</h3><span class="integration-state ${existing ? "connected" : ""}">${existing ? `${environment === "demo" ? "Demo" : "Produkcija"} povezano` : "Nije povezano"}</span><form class="integration-form" data-provider="${item.provider}"><label>Okruženje<select name="environment" ${disabled}><option value="demo" ${environment === "demo" ? "selected" : ""}>Demo - bez produkcionih dokumenata</option><option value="production" ${environment === "production" ? "selected" : ""}>Produkcija - stvarni dokumenti</option></select></label><p class="environment-warning">Za lokalno testiranje koristi Demo. API ključ mora biti generisan u istom demo portalu.</p><label>${existing ? "Novi API ključ (za zamenu)" : "API ključ"}<input name="api_key" type="password" autocomplete="new-password" required ${disabled}></label><button class="primary" ${disabled}>${existing ? "Sačuvaj povezivanje" : "Poveži servis"}</button></form></article>`;
   }).join("");
   $$(".integration-form").forEach(form => form.addEventListener("submit", saveIntegration));
 }
 
 async function saveIntegration(event) {
   event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form));
-  try { await api("/api/v1/integrations", {method:"PUT", body:JSON.stringify({provider:form.dataset.provider, base_url:data.base_url, api_key:data.api_key, settings:{}})}); form.reset(); showToast("Povezivanje je sačuvano."); await loadIntegrations(); } catch (error) { showToast(error.message, true); }
+  if (data.environment === "production" && !confirm("Povezujete PRODUKCIONO okruženje. Dokumenti mogu imati pravno dejstvo. Nastaviti?")) return;
+  try { await api("/api/v1/integrations", {method:"PUT", body:JSON.stringify({provider:form.dataset.provider, environment:data.environment, api_key:data.api_key, settings:{}})}); form.reset(); showToast(`${data.environment === "demo" ? "Demo" : "Produkcijsko"} povezivanje je sačuvano.`); await loadIntegrations(); } catch (error) { showToast(error.message, true); }
 }
 
 function showView(name) {
