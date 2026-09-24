@@ -102,6 +102,7 @@ async function loadWorkspace() {
 function renderOrganizationProfile() {
   const form = $("#organization-profile-form"); const profile = state.organization?.profile || {};
   form.reset();
+  ["name", "tax_id", "registration_number"].forEach(name => { form.elements[name].value = state.organization?.[name] || ""; });
   Object.entries(profile).forEach(([name, value]) => { if (form.elements[name]) form.elements[name].value = value || ""; });
   form.elements.country_code.value = profile.country_code || "RS";
   form.querySelectorAll("input,button").forEach(control => { control.disabled = !canAdminister(); });
@@ -207,7 +208,7 @@ async function saveIntegration(event) {
 
 $("#organization-profile-form").addEventListener("submit", async event => {
   event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form));
-  ["bank_account", "phone", "jbkjs"].forEach(name => { if (!data[name]) data[name] = null; });
+  ["registration_number", "bank_account", "phone", "jbkjs"].forEach(name => { if (!data[name]) data[name] = null; });
   data.country_code = data.country_code.toUpperCase();
   try {
     const updated = await api("/api/v1/organizations/current", {method:"PATCH", body:JSON.stringify(data)});
@@ -303,6 +304,11 @@ $("#organization-form").addEventListener("submit", async event => {
   } catch (error) { $("#organization-error").textContent = error.message; }
 });
 
+const plannedDespatchLabel = $("#document-form [name=planned_despatch_at]").closest("label");
+const actualDespatchLabel = document.createElement("label");
+actualDespatchLabel.innerHTML = 'Stvarni polazak<input name="actual_despatch_at" type="datetime-local">';
+plannedDespatchLabel.after(actualDespatchLabel);
+
 let documentLineSequence = 0;
 
 function addDocumentLine() {
@@ -321,7 +327,7 @@ function toggleDocumentType() {
     field.hidden = !invoice;
     field.querySelectorAll("input,select").forEach(control => { control.disabled = !invoice; });
   });
-  ["shipment_id", "planned_despatch_at", "planned_delivery_at", "despatch_street", "despatch_city", "despatch_postal_code", "despatch_country_code", "delivery_street", "delivery_city", "delivery_postal_code", "delivery_country_code"].forEach(name => { $("#document-form").elements[name].required = !invoice; });
+  ["shipment_id", "planned_despatch_at", "actual_despatch_at", "planned_delivery_at", "despatch_street", "despatch_city", "despatch_postal_code", "despatch_country_code", "delivery_street", "delivery_city", "delivery_postal_code", "delivery_country_code"].forEach(name => { $("#document-form").elements[name].required = !invoice; });
 }
 
 function documentLines(provider) {
@@ -344,7 +350,7 @@ $("#document-form").addEventListener("submit", async event => {
   const customer = {name:data.customer_name, tax_id:data.customer_tax_id, registration_number:data.customer_registration_number || null, email:data.customer_email || null, jbkjs:data.customer_jbkjs || null, address:{street:data.customer_street, city:data.customer_city, postal_code:data.customer_postal_code, country_code:data.customer_country_code.toUpperCase()}};
   const payload = {provider, document_number:data.document_number, issue_date:data.issue_date, note:data.note || null, customer, lines:documentLines(provider), queue_after_create:Boolean(data.queue_after_create)};
   if (provider === "sef") Object.assign(payload, {delivery_date:data.delivery_date, due_date:data.due_date, currency:data.currency, payment_account:data.payment_account || null, payment_reference:data.payment_reference || null});
-  else Object.assign(payload, {despatch_type:data.despatch_type, shipment_id:data.shipment_id, shipment_method:data.shipment_method, order_reference:data.order_reference || null, planned_despatch_at:new Date(data.planned_despatch_at).toISOString(), planned_delivery_at:new Date(data.planned_delivery_at).toISOString(), despatch_address:{street:data.despatch_street, city:data.despatch_city, postal_code:data.despatch_postal_code, country_code:data.despatch_country_code.toUpperCase()}, delivery_address:{street:data.delivery_street, city:data.delivery_city, postal_code:data.delivery_postal_code, country_code:data.delivery_country_code.toUpperCase()}, gross_weight:data.gross_weight ? Number(data.gross_weight) : null, package_count:data.package_count ? Number(data.package_count) : null, carrier_name:data.carrier_name || null, carrier_tax_id:data.carrier_tax_id || null, vehicle_plate:data.vehicle_plate || null, driver_name:data.driver_name || null, driver_email:data.driver_email || null});
+  else Object.assign(payload, {despatch_type:data.despatch_type, shipment_id:data.shipment_id, shipment_method:data.shipment_method, order_reference:data.order_reference || null, planned_despatch_at:new Date(data.planned_despatch_at).toISOString(), actual_despatch_at:new Date(data.actual_despatch_at).toISOString(), planned_delivery_at:new Date(data.planned_delivery_at).toISOString(), despatch_address:{street:data.despatch_street, city:data.despatch_city, postal_code:data.despatch_postal_code, country_code:data.despatch_country_code.toUpperCase()}, delivery_address:{street:data.delivery_street, city:data.delivery_city, postal_code:data.delivery_postal_code, country_code:data.delivery_country_code.toUpperCase()}, gross_weight:data.gross_weight ? Number(data.gross_weight) : null, package_count:data.package_count ? Number(data.package_count) : null, carrier_name:data.carrier_name || null, carrier_tax_id:data.carrier_tax_id || null, carrier_registration_number:data.carrier_registration_number || null, vehicle_plate:data.vehicle_plate || null, driver_name:data.driver_name || null, driver_email:data.driver_email || null});
   try { await api("/api/v1/documents/from-form", {method:"POST", body:JSON.stringify(payload)}); $("#document-dialog").close(); showToast(data.queue_after_create ? "Dokument je generisan i dodat u red." : "Dokument i UBL XML su sačuvani."); await loadDocuments(); await loadJobs(); } catch (error) { $("#document-error").textContent = error.message; }
 });
 
@@ -373,7 +379,8 @@ $("#document-form [name=provider]").addEventListener("change", toggleDocumentTyp
 $("#add-document-line").onclick = addDocumentLine;
 $("#new-document-button").onclick = () => {
   const requiredProfile = ["street", "city", "postal_code", "country_code", "email"];
-  if (requiredProfile.some(field => !state.organization?.profile?.[field])) { showView("settings"); showToast("Prvo sačuvajte poslovne podatke izabrane firme.", true); return; }
+  const validTaxId = /^(?:\d{9}|\d{13})$/.test(state.organization?.tax_id || "");
+  if (!validTaxId || requiredProfile.some(field => !state.organization?.profile?.[field])) { showView("settings"); showToast("Prvo unesite važeće pravne i poslovne podatke izabrane firme.", true); return; }
   $("#document-error").textContent = ""; resetDocumentForm(); $("#document-dialog").showModal();
 };
 $("#new-organization-button").onclick = () => { $("#organization-error").textContent = ""; $("#organization-dialog").showModal(); };

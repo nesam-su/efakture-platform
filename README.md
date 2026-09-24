@@ -114,6 +114,7 @@ API adrese se biraju na serveru iz fiksne liste zvaničnih Demo/Produkcija adres
 ## Unos fakture ili otpremnice bez XML-a
 
 1. U delu `Podešavanja` jednom unesite poslovnu adresu i email izabrane firme.
+   Pravni naziv, PIB/JMBG i matični broj moraju biti podaci subjekta kome pripada API ključ.
 2. Na početnoj strani izaberite `Novi dokument`, a zatim SEF fakturu ili eOtpremnicu.
 3. Unesite kupca/primaoca, datume i jednu ili više stavki. Za otpremnicu se dodatno
    unose mesto otpreme/isporuke i podaci o transportu.
@@ -122,6 +123,9 @@ API adrese se biraju na serveru iz fiksne liste zvaničnih Demo/Produkcija adres
 
 Ključevi se ne unose uz svaki dokument. Šifrovano se čuvaju po firmi i okruženju,
 a menjaju se samo kada korisnik želi da zameni ključ ili pređe sa Demo na Produkciju.
+PIB pošiljaoca i primaoca mora imati 9 cifara (ili 13 cifara za JMBG), a primalac
+mora biti registrovan u istom SEF Demo ili Produkcijskom okruženju. Serverske
+validatorske poruke čuvaju se uz neuspešan dokument radi lakšeg otklanjanja greške.
 
 Trenutna forma pokriva standardnu izlaznu fakturu i standardnu eksternu/internu
 otpremnicu. Napredni poreski scenariji biće dodavani kao posebni tipovi dokumenata,

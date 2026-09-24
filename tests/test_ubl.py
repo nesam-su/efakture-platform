@@ -44,6 +44,15 @@ def customer() -> PartyInput:
     )
 
 
+def test_party_rejects_invalid_serbian_identifier_length():
+    with pytest.raises(ValidationError, match="string_pattern_mismatch"):
+        PartyInput(
+            name="Neispravna firma",
+            tax_id="12345678",
+            address=AddressInput(street="Test 1", city="Subotica", postal_code="24000"),
+        )
+
+
 def test_invoice_form_generates_totals_and_valid_ubl_xml():
     data = InvoiceFormCreate(
         provider="sef",
@@ -88,6 +97,7 @@ def test_despatch_form_generates_transport_and_lines():
         shipment_id="POS-1",
         shipment_method="2",
         planned_despatch_at=datetime.fromisoformat("2026-09-25T08:00:00+02:00"),
+        actual_despatch_at=datetime.fromisoformat("2026-09-25T08:10:00+02:00"),
         planned_delivery_at=datetime.fromisoformat("2026-09-25T12:00:00+02:00"),
         despatch_address=AddressInput(
             street="Magacin 1", city="Subotica", postal_code="24000"
@@ -97,6 +107,7 @@ def test_despatch_form_generates_transport_and_lines():
         ),
         carrier_name="Prevoz DOO",
         carrier_tax_id="111222333",
+        carrier_registration_number="12345678",
         vehicle_plate="SU-123-AA",
         driver_name="Petar Petrović",
         driver_email="vozac@example.rs",
@@ -113,11 +124,15 @@ def test_despatch_form_generates_transport_and_lines():
     assert root.findtext(f"{{{CBC}}}ID") == "OT-1/2026"
     assert root.findtext(f".//{{{CAC}}}RoadTransport/{{{CBC}}}LicensePlateID") == "SU-123-AA"
     assert root.findtext(f".//{{{CAC}}}DriverPerson/{{{CBC}}}ID") == "vozac@example.rs"
+    assert root.findtext(f".//{{{CBC}}}ActualDespatchDate") == "2026-09-25"
+    assert root.findtext(
+        f".//{{{CAC}}}CarrierParty/{{{CAC}}}PartyLegalEntity/{{{CBC}}}CompanyID"
+    ) == "12345678"
     assert len(root.findall(f"{{{CAC}}}DespatchLine")) == 1
 
 
 def test_despatch_rejects_incomplete_carrier_details():
-    with pytest.raises(ValidationError, match="Naziv i PIB prevoznika"):
+    with pytest.raises(ValidationError, match="Naziv, PIB i matični broj prevoznika"):
         DespatchFormCreate(
             provider="eotpremnice",
             document_number="OT-2/2026",
@@ -126,6 +141,7 @@ def test_despatch_rejects_incomplete_carrier_details():
             shipment_id="POS-2",
             shipment_method="2",
             planned_despatch_at=datetime.fromisoformat("2026-09-25T08:00:00+02:00"),
+            actual_despatch_at=datetime.fromisoformat("2026-09-25T08:10:00+02:00"),
             planned_delivery_at=datetime.fromisoformat("2026-09-25T12:00:00+02:00"),
             despatch_address=AddressInput(
                 street="Magacin 1", city="Subotica", postal_code="24000"

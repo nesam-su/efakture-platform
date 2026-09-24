@@ -78,7 +78,14 @@ def _party(
 
 
 def organization_party(organization: Organization) -> tuple[PartyInput, OrganizationProfileUpdate]:
-    profile = OrganizationProfileUpdate.model_validate(organization.profile)
+    profile = OrganizationProfileUpdate.model_validate(
+        {
+            **organization.profile,
+            "name": organization.name,
+            "tax_id": organization.tax_id,
+            "registration_number": organization.registration_number,
+        }
+    )
     party = PartyInput(
         name=organization.name,
         tax_id=organization.tax_id,
@@ -262,6 +269,7 @@ def generate_despatch_xml(organization: Organization, data: DespatchFormCreate) 
             carrier = PartyInput(
                 name=data.carrier_name,
                 tax_id=data.carrier_tax_id,
+                registration_number=data.carrier_registration_number,
                 address=data.despatch_address,
             )
             _party(stage, carrier, wrapper="CarrierParty", nested_party=False)
@@ -283,6 +291,7 @@ def generate_despatch_xml(organization: Organization, data: DespatchFormCreate) 
     _date_and_time(period, "End", data.planned_delivery_at)
     despatch = _element(delivery, CAC, "Despatch")
     _date_and_time(despatch, "EstimatedDespatch", data.planned_despatch_at)
+    _date_and_time(despatch, "ActualDespatch", data.actual_despatch_at)
     _address(despatch, data.despatch_address, tag="DespatchAddress")
     for index, line in enumerate(data.lines, 1):
         _despatch_line(root, line, index)

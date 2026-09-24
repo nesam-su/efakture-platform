@@ -11,7 +11,7 @@ from app.models import Direction, DocumentStatus, JobStatus, Provider, Role
 
 class BootstrapRequest(BaseModel):
     organization_name: str = Field(min_length=2, max_length=200)
-    tax_id: str = Field(min_length=8, max_length=20)
+    tax_id: str = Field(pattern=r"^(?:\d{9}|\d{13})$")
     registration_number: str | None = Field(default=None, max_length=30)
     admin_name: str = Field(min_length=2, max_length=200)
     admin_email: EmailStr
@@ -82,11 +82,14 @@ class OrganizationOut(BaseModel):
 
 class OrganizationCreate(BaseModel):
     name: str = Field(min_length=2, max_length=200)
-    tax_id: str = Field(min_length=8, max_length=20)
+    tax_id: str = Field(pattern=r"^(?:\d{9}|\d{13})$")
     registration_number: str | None = Field(default=None, max_length=30)
 
 
 class OrganizationProfileUpdate(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    tax_id: str = Field(pattern=r"^(?:\d{9}|\d{13})$")
+    registration_number: str | None = Field(default=None, max_length=30)
     street: str = Field(min_length=2, max_length=300)
     city: str = Field(min_length=2, max_length=120)
     postal_code: str = Field(min_length=2, max_length=20)
@@ -172,7 +175,7 @@ class AddressInput(BaseModel):
 
 class PartyInput(BaseModel):
     name: str = Field(min_length=2, max_length=300)
-    tax_id: str = Field(min_length=8, max_length=20)
+    tax_id: str = Field(pattern=r"^(?:\d{9}|\d{13})$")
     registration_number: str | None = Field(default=None, max_length=30)
     email: EmailStr | None = None
     jbkjs: str | None = Field(default=None, max_length=30)
@@ -226,13 +229,15 @@ class DespatchFormCreate(BaseModel):
     shipment_id: str = Field(min_length=1, max_length=100)
     shipment_method: Literal["1", "2", "3", "4", "5"]
     planned_despatch_at: datetime
+    actual_despatch_at: datetime
     planned_delivery_at: datetime
     despatch_address: AddressInput
     delivery_address: AddressInput
     gross_weight: Decimal | None = Field(default=None, gt=0, decimal_places=3)
     package_count: int | None = Field(default=None, gt=0)
     carrier_name: str | None = Field(default=None, max_length=300)
-    carrier_tax_id: str | None = Field(default=None, max_length=20)
+    carrier_tax_id: str | None = Field(default=None, pattern=r"^(?:\d{9}|\d{13})$")
+    carrier_registration_number: str | None = Field(default=None, max_length=30)
     vehicle_plate: str | None = Field(default=None, max_length=30)
     driver_name: str | None = Field(default=None, max_length=200)
     driver_email: EmailStr | None = None
@@ -243,8 +248,15 @@ class DespatchFormCreate(BaseModel):
     def validate_despatch(self):
         if self.planned_delivery_at < self.planned_despatch_at:
             raise ValueError("Planirani prijem ne može biti pre planirane otpreme")
-        if bool(self.carrier_name) != bool(self.carrier_tax_id):
-            raise ValueError("Naziv i PIB prevoznika unose se zajedno")
+        if self.planned_delivery_at < self.actual_despatch_at:
+            raise ValueError("Planirani prijem ne može biti pre stvarne otpreme")
+        carrier_fields = (
+            self.carrier_name,
+            self.carrier_tax_id,
+            self.carrier_registration_number,
+        )
+        if any(carrier_fields) and not all(carrier_fields):
+            raise ValueError("Naziv, PIB i matični broj prevoznika unose se zajedno")
         if self.driver_name and not self.driver_email:
             raise ValueError("Email vozača je obavezan kada je uneto ime vozača")
         return self

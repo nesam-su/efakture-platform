@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import smtplib
@@ -191,13 +192,26 @@ def _is_transient(exc: Exception) -> bool:
     )
 
 
+def _error_message(exc: Exception) -> str:
+    message = str(exc)
+    if isinstance(exc, GovernmentApiError) and exc.body:
+        body = (
+            json.dumps(exc.body, ensure_ascii=False, separators=(",", ":"))
+            if not isinstance(exc.body, str)
+            else exc.body
+        )
+        if body and body not in message:
+            message = f"{message}: {body}"
+    return message[:4000]
+
+
 async def fail_job(job_id: UUID, exc: Exception) -> None:
     async with SessionFactory() as db:
         job = await db.get(BackgroundJob, job_id)
         if job is None:
             return
         document = await db.get(BusinessDocument, job.document_id)
-        message = str(exc)[:4000]
+        message = _error_message(exc)
         retry = not isinstance(exc, PermanentJobError) and _is_transient(exc)
         now = datetime.now(UTC)
         if retry and job.attempts < job.max_attempts:

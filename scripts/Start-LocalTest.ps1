@@ -38,7 +38,7 @@ try {
     $credentials = Get-Content -LiteralPath $credentialsPath -Raw | ConvertFrom-Json
     $bootstrap = @{
         organization_name = "Lokalna test firma"
-        tax_id = "99999999"
+        tax_id = "999999999"
         registration_number = "99999999"
         admin_name = "Lokalni administrator"
         admin_email = $credentials.email

@@ -659,7 +659,12 @@ async def update_organization_profile(
     organization = await db.get(Organization, context.organization_id)
     if organization is None:
         raise HTTPException(status_code=404, detail="Firma nije pronađena")
-    organization.profile = data.model_dump(mode="json")
+    organization.name = data.name
+    organization.tax_id = data.tax_id
+    organization.registration_number = data.registration_number
+    organization.profile = data.model_dump(
+        mode="json", exclude={"name", "tax_id", "registration_number"}
+    )
     db.add(
         AuditEvent(
             organization_id=organization.id,
