@@ -57,7 +57,7 @@
     <div class="workspace">
       <header class="topbar">
         <button class="menu-button" id="menu-button" aria-label="Otvori meni">☰</button>
-        <label class="organization-picker">Firma<select id="organization-select" aria-label="Izabrana firma"></select></label>
+        <div class="organization-switcher"><label class="organization-picker">Firma<select id="organization-select" aria-label="Izabrana firma"></select></label><button class="secondary compact" id="new-organization-button" type="button">+ Firma</button></div>
         <div class="topbar-actions"><button class="secondary" id="refresh-button">Osveži</button><button class="primary" id="new-document-button">+ Novi dokument</button></div>
       </header>
 
@@ -120,6 +120,29 @@
       <label>Uloga<select name="role"><option value="viewer">Pregled</option><option value="operator">Operater</option><option value="accountant">Knjigovođa</option><option value="admin">Administrator</option></select></label>
       <p class="muted small">Pozivni token će biti prikazan samo jednom nakon kreiranja.</p><p class="form-error" id="invite-error"></p>
       <div class="dialog-actions"><button type="button" class="secondary close-dialog">Odustani</button><button class="primary" type="submit">Kreiraj poziv</button></div>
+    </form>
+  </dialog>
+  <dialog id="organization-dialog">
+    <form id="organization-form">
+      <div class="dialog-heading"><div><p class="eyebrow">NOVA FIRMA</p><h2>Dodajte firmu</h2></div><button type="button" class="icon-button close-dialog" aria-label="Zatvori">×</button></div>
+      <div class="form-grid">
+        <label class="span-2">Naziv firme<input name="name" minlength="2" maxlength="200" required></label>
+        <label>PIB<input name="tax_id" minlength="8" maxlength="20" required></label>
+        <label>Matični broj<input name="registration_number" maxlength="30"></label>
+      </div>
+      <p class="form-error" id="organization-error"></p>
+      <div class="dialog-actions"><button type="button" class="secondary close-dialog">Odustani</button><button class="primary" type="submit">Kreiraj firmu</button></div>
+    </form>
+  </dialog>
+  <dialog id="accept-invitation-dialog">
+    <form id="accept-invitation-form">
+      <div class="dialog-heading"><div><p class="eyebrow">POZIV ZA TIM</p><h2>Prihvatite poziv</h2></div></div>
+      <input name="invitation_token" type="hidden">
+      <label>Ime i prezime <span class="optional">(obavezno samo za novi nalog)</span><input name="full_name" minlength="2" maxlength="200" autocomplete="name"></label>
+      <label>Lozinka <span class="optional">(nova ili postojeća)</span><input name="password" type="password" minlength="12" maxlength="200" autocomplete="current-password" required></label>
+      <p class="muted small">Ako već imate nalog, unesite postojeću lozinku. Za novi nalog unesite ime i odaberite lozinku od najmanje 12 znakova.</p>
+      <p class="form-error" id="accept-invitation-error"></p>
+      <div class="dialog-actions"><button class="primary" type="submit">Prihvati poziv</button></div>
     </form>
   </dialog>
   <dialog id="reset-request-dialog">

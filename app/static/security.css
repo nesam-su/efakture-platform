@@ -12,6 +12,17 @@
   font-weight: 750;
 }
 
+.organization-switcher {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+
+.compact {
+  padding: 8px 11px;
+  white-space: nowrap;
+}
+
 .security-panel {
   max-width: 760px;
   padding: 22px;

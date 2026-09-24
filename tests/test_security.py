@@ -87,6 +87,8 @@ def test_public_pages(monkeypatch):
     assert "eDokumenti" in response.text
     assert 'id="document-dialog"' in response.text
     assert 'id="organization-select"' in response.text
+    assert 'id="organization-dialog"' in response.text
+    assert 'id="accept-invitation-dialog"' in response.text
     assert client.get("/static/app.css").status_code == 200
     assert client.get("/static/security.css").status_code == 200
     assert client.get("/static/app.js").status_code == 200

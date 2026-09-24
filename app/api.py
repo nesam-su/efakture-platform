@@ -709,6 +709,20 @@ async def create_invitation(
     )
     db.add(invitation)
     await db.flush()
+    invitation_url = f"{settings.public_base_url}/?invitation_token={quote(secret)}"
+    db.add(
+        enqueue_email(
+            recipient=invitation.email,
+            event_type="membership_invitation",
+            subject="Poziv za pristup aplikaciji eDokumenti",
+            text_body=(
+                "Pozvani ste da pristupite firmi u aplikaciji eDokumenti.\n\n"
+                f"Otvorite jednokratni link:\n{invitation_url}\n\n"
+                f"Poziv važi {data.expires_in_hours} sati. Ako poziv niste očekivali, "
+                "zanemarite ovu poruku."
+            ),
+        )
+    )
     db.add(
         AuditEvent(
             organization_id=context.organization_id,

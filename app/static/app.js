@@ -47,7 +47,8 @@ async function api(path, options = {}) {
   if (state.organization && options.tenant !== false) headers["X-Organization-Id"] = state.organization.id;
   if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   const response = await fetch(path, {...options, headers});
-  if (response.status === 401 && path !== "/api/v1/auth/login") clearSession();
+  const publicAuthPaths = ["/api/v1/auth/login", "/api/v1/auth/invitations/accept"];
+  if (response.status === 401 && !publicAuthPaths.includes(path)) clearSession();
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     const detail = Array.isArray(body.detail) ? body.detail.map(item => item.msg).join("; ") : body.detail;
@@ -66,16 +67,20 @@ function canAdminister() {
   return state.organization && ["owner", "admin"].includes(state.organization.role);
 }
 
+function renderOrganizationSelect(preferredId = null) {
+  const savedId = preferredId || sessionStorage.getItem(organizationKey);
+  state.organization = state.organizations.find(item => item.id === savedId) || state.organizations[0];
+  const select = $("#organization-select");
+  select.innerHTML = state.organizations.map(item => `<option value="${item.id}">${escapeHtml(item.name)} · ${escapeHtml(roleNames[item.role] || item.role)}</option>`).join("");
+  select.value = state.organization.id;
+  sessionStorage.setItem(organizationKey, state.organization.id);
+}
+
 async function initializeApp() {
   try {
     state.organizations = await api("/api/v1/organizations", {tenant: false});
     if (!state.organizations.length) throw new Error("Korisnik nema pristup nijednoj firmi");
-    const savedId = sessionStorage.getItem(organizationKey);
-    state.organization = state.organizations.find(item => item.id === savedId) || state.organizations[0];
-    const select = $("#organization-select");
-    select.innerHTML = state.organizations.map(item => `<option value="${item.id}">${escapeHtml(item.name)} · ${escapeHtml(roleNames[item.role] || item.role)}</option>`).join("");
-    select.value = state.organization.id;
-    sessionStorage.setItem(organizationKey, state.organization.id);
+    renderOrganizationSelect();
     $("#auth-view").hidden = true;
     $("#app-view").hidden = false;
     $("#new-document-button").hidden = !canEdit();
@@ -252,6 +257,24 @@ $("#organization-select").addEventListener("change", async event => {
   $("#new-document-button").hidden = !canEdit(); $("#invite-button").hidden = !canAdminister(); await loadWorkspace();
 });
 
+$("#organization-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = Object.fromEntries(new FormData(form));
+  if (!data.registration_number) data.registration_number = null;
+  try {
+    const organization = await api("/api/v1/organizations", {method:"POST", body:JSON.stringify(data), tenant:false});
+    state.organizations = await api("/api/v1/organizations", {tenant:false});
+    renderOrganizationSelect(organization.id);
+    $("#organization-dialog").close();
+    form.reset();
+    $("#new-document-button").hidden = !canEdit();
+    $("#invite-button").hidden = !canAdminister();
+    await loadWorkspace();
+    showToast("Firma je kreirana.");
+  } catch (error) { $("#organization-error").textContent = error.message; }
+});
+
 $("#document-form").addEventListener("submit", async event => {
   event.preventDefault(); const form = event.currentTarget; const formData = new FormData(form); const file = formData.get("xml_file");
   const issueDate = formData.get("issue_date"); const payload = {provider:formData.get("provider"), direction:formData.get("direction"), document_type:formData.get("document_type"), document_number:formData.get("document_number") || null, idempotency_key:`ui-${Date.now()}-${crypto.randomUUID()}`, issue_date:issueDate ? new Date(`${issueDate}T00:00:00`).toISOString() : null, counterparty_name:formData.get("counterparty_name") || null, counterparty_tax_id:formData.get("counterparty_tax_id") || null, currency:formData.get("currency") || null, total_amount:formData.get("total_amount") || null, payload:{source:"web_ui"}};
@@ -264,11 +287,28 @@ $("#document-form").addEventListener("submit", async event => {
 
 $("#invite-form").addEventListener("submit", async event => {
   event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form));
-  try { const invitation = await api("/api/v1/invitations", {method:"POST", body:JSON.stringify({...data, expires_in_hours:72})}); form.innerHTML = `<div class="dialog-heading"><div><p class="eyebrow">POZIV JE KREIRAN</p><h2>Jednokratni token</h2></div><button type="button" class="icon-button" id="close-invite-result">×</button></div><p class="muted">Bezbedno ga dostavite korisniku. Posle zatvaranja se više neće prikazati.</p><div class="token-box">${escapeHtml(invitation.invitation_token)}</div><div class="dialog-actions"><button type="button" class="primary" id="copy-invite-token">Kopiraj token</button></div>`; $("#close-invite-result").onclick = () => $("#invite-dialog").close(); $("#copy-invite-token").onclick = async () => { await navigator.clipboard.writeText(invitation.invitation_token); showToast("Token je kopiran."); }; } catch (error) { $("#invite-error").textContent = error.message; }
+  try { const invitation = await api("/api/v1/invitations", {method:"POST", body:JSON.stringify({...data, expires_in_hours:72})}); const invitationLink = `${location.origin}/?invitation_token=${encodeURIComponent(invitation.invitation_token)}`; form.innerHTML = `<div class="dialog-heading"><div><p class="eyebrow">POZIV JE KREIRAN</p><h2>Link je spreman</h2></div><button type="button" class="icon-button" id="close-invite-result">×</button></div><p class="muted">Poziv je dodat u email red. Link možete i ručno dostaviti korisniku.</p><div class="token-box">${escapeHtml(invitationLink)}</div><div class="dialog-actions"><button type="button" class="primary" id="copy-invite-token">Kopiraj link</button></div>`; $("#close-invite-result").onclick = () => $("#invite-dialog").close(); $("#copy-invite-token").onclick = async () => { await navigator.clipboard.writeText(invitationLink); showToast("Link je kopiran."); }; } catch (error) { $("#invite-error").textContent = error.message; }
+});
+
+$("#accept-invitation-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = Object.fromEntries(new FormData(form));
+  if (!data.full_name) data.full_name = null;
+  try {
+    const result = await api("/api/v1/auth/invitations/accept", {method:"POST", body:JSON.stringify(data), tenant:false});
+    sessionStorage.setItem(tokenKey, result.access_token);
+    history.replaceState({}, "", location.pathname);
+    $("#accept-invitation-dialog").close();
+    form.reset();
+    await initializeApp();
+    showToast("Poziv je prihvaćen.");
+  } catch (error) { $("#accept-invitation-error").textContent = error.message; }
 });
 
 $("#document-form [name=provider]").addEventListener("change", event => { $("#document-form [name=document_type]").value = event.target.value === "sef" ? "sales_invoice" : "despatch_advice"; });
 $("#new-document-button").onclick = () => { $("#document-error").textContent = ""; $("#document-dialog").showModal(); };
+$("#new-organization-button").onclick = () => { $("#organization-error").textContent = ""; $("#organization-dialog").showModal(); };
 $("#invite-button").onclick = () => {
   const form = $("#invite-form");
   form.innerHTML = inviteFormMarkup;
@@ -286,6 +326,12 @@ const resetToken = new URLSearchParams(location.search).get("reset_token");
 if (resetToken) {
   $("#reset-confirm-form [name=token]").value = resetToken;
   $("#reset-confirm-dialog").showModal();
+}
+
+const invitationToken = new URLSearchParams(location.search).get("invitation_token");
+if (invitationToken) {
+  $("#accept-invitation-form [name=invitation_token]").value = invitationToken;
+  $("#accept-invitation-dialog").showModal();
 }
 
 if (sessionStorage.getItem(tokenKey)) initializeApp();

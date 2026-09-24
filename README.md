@@ -33,6 +33,7 @@ Integracioni sloj je mapiran prema lokalnoj dokumentaciji od 31. jula i 21. avgu
 - jednokratni reset lozinke preko email linka, uz opoziv svih postojećih sesija;
 - trajni PostgreSQL email outbox sa SMTP STARTTLS slanjem i kontrolisanim ponavljanjem;
 - TOTP dvofaktorska prijava, zaštita od ponovne upotrebe koda i jednokratni rezervni kodovi.
+- kompletan web tok za dodavanje firme, email poziv i prihvatanje poziva za novog ili postojećeg korisnika.
 
 ## Lokalno pokretanje
 
@@ -90,8 +91,8 @@ Nikada ne čuvati produkcijske tajne u Git-u. Bootstrap endpoint se automatski z
 
 1. Prijavljeni korisnik može napraviti dodatnu firmu preko `POST /api/v1/organizations`.
 2. Vlasnik ili administrator bira firmu zaglavljem `X-Organization-Id` i pravi poziv preko `POST /api/v1/invitations`.
-3. API vraća jednokratni `invitation_token`; u produkciji ga treba poslati primaocu preko budućeg email servisa, ne zapisivati u log.
-4. Primalac prihvata poziv preko `POST /api/v1/auth/invitations/accept`. Novi korisnik navodi ime i lozinku, a postojeći potvrđuje svoju lozinku.
+3. Jednokratni link se automatski stavlja u email outbox; web interfejs ga prikazuje i jednom kao rezervu za ručno dostavljanje.
+4. Primalac otvara link i prihvata poziv u web interfejsu. Novi korisnik navodi ime i novu lozinku, a postojeći potvrđuje svoju lozinku.
 5. Token se u bazi čuva samo kao SHA-256 otisak, ima rok trajanja i ne može se ponovo upotrebiti.
 
 ## Tok slanja dokumenta
