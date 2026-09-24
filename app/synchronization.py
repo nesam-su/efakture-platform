@@ -82,6 +82,13 @@ def internal_status(remote_status: str | None) -> DocumentStatus:
     return DocumentStatus.sent
 
 
+def request_status(current: str, incoming: str) -> str:
+    """Keep an asynchronous failure terminal when older pending events arrive later."""
+    if current == "Failed" and incoming in {"Pending", "Submitted"}:
+        return current
+    return incoming
+
+
 def eot_document_refs(role: EotRole, event: dict[str, Any]) -> list[dict[str, Any]]:
     data = event.get("data") if isinstance(event.get("data"), dict) else {}
     directions: dict[EotRole, dict[str, Direction]] = {
@@ -338,7 +345,11 @@ async def _handle_request_event(
     if request is None:
         return
     event_type = str(event.get("type") or "")
-    request.status = event_type.rsplit(".", 1)[-1] or "Unknown"
+    incoming_status = event_type.rsplit(".", 1)[-1] or "Unknown"
+    next_status = request_status(request.status, incoming_status)
+    if next_status == "Failed" and incoming_status != "Failed":
+        return
+    request.status = next_status
     data = event.get("data") if isinstance(event.get("data"), dict) else {}
     request.response_payload = event
     messages = data.get("businessMessages") or event.get("businessMessages")
@@ -351,7 +362,9 @@ async def _handle_request_event(
             document.external_id = str(document_id)
         document.remote_status = request.status
         document.remote_status_at = parse_event_datetime(event.get("date")) or datetime.now(UTC)
-        document.status = internal_status(data.get("status") or request.status)
+        document.status = internal_status(
+            request.status if request.status == "Failed" else data.get("status") or request.status
+        )
         if request.status == "Failed":
             document.last_error = str(messages or data)[:4000]
 

@@ -5,6 +5,7 @@ from app.synchronization import (
     eot_document_refs,
     internal_status,
     parse_event_datetime,
+    request_status,
     sef_sync_date,
 )
 
@@ -44,6 +45,11 @@ def test_remote_status_mapping_preserves_business_meaning():
     assert internal_status("Storno") == DocumentStatus.cancelled
     assert internal_status("Mistake") == DocumentStatus.error
     assert internal_status("Received") == DocumentStatus.delivered
+
+
+def test_failed_async_request_is_not_downgraded_by_late_pending_event():
+    assert request_status("Failed", "Pending") == "Failed"
+    assert request_status("Pending", "Failed") == "Failed"
 
 
 def test_sef_sync_date_is_always_in_the_past_and_recovers_future_cursor():
