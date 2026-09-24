@@ -1,7 +1,12 @@
-from datetime import UTC
+from datetime import UTC, date, datetime
 
 from app.models import Direction, DocumentStatus
-from app.synchronization import eot_document_refs, internal_status, parse_event_datetime
+from app.synchronization import (
+    eot_document_refs,
+    internal_status,
+    parse_event_datetime,
+    sef_sync_date,
+)
 
 
 def test_parse_event_datetime_supports_offset_and_invalid_values():
@@ -39,3 +44,16 @@ def test_remote_status_mapping_preserves_business_meaning():
     assert internal_status("Storno") == DocumentStatus.cancelled
     assert internal_status("Mistake") == DocumentStatus.error
     assert internal_status("Received") == DocumentStatus.delivered
+
+
+def test_sef_sync_date_is_always_in_the_past_and_recovers_future_cursor():
+    today = date(2026, 9, 24)
+    assert sef_sync_date(None, today=today, initial_lookback_days=1) == date(2026, 9, 23)
+    future = datetime(2026, 9, 25, 12, tzinfo=UTC)
+    assert sef_sync_date(future, today=today, initial_lookback_days=1) == date(2026, 9, 23)
+
+
+def test_sef_initial_lookback_is_limited_to_retention_window():
+    assert sef_sync_date(
+        None, today=date(2026, 9, 24), initial_lookback_days=90
+    ) == date(2026, 8, 25)

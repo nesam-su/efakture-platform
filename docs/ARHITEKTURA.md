@@ -20,7 +20,7 @@ Za vrlo velike klijente moguć je kasniji prelazak na zasebnu šemu ili bazu po 
 2. XML/PDF prilog se upisuje izvan baze u tenant/document putanju, uz SHA-256 i ograničenje veličine.
 3. API kreira trajan `send_document` posao, a worker validira konfiguraciju i šalje dokument.
 4. SEF worker šalje XML sinhrono; eOtpremnice worker šalje multipart zahtev i čuva jedinstveni `RequestId` za asinhronu obradu.
-5. Periodični posao čita SEF promene po vremenu, a eOtpremnice promene po datumu, ulozi i stranici; svaki tok ima svoj cursor/watermark.
+5. Periodični posao čita SEF promene po završenom kalendarskom danu, a eOtpremnice promene po datumu, ulozi i stranici; svaki tok ima svoj cursor/watermark i greška jednog toka ne blokira ostale.
 6. Svaka poslovna akcija i promena statusa ulazi u audit.
 
 Svaki spoljni događaj se pre upisa deduplikuje kombinacijom `(organization_id, provider, stream, external_event_id)`. SEF cursor namerno ponavlja mali vremenski interval, dok eOtpremnice cursor čuva datum, broj strane i broj obrađenih stavki. Time kratkotrajni prekid workera ne ostavlja rupu u sinhronizaciji.

@@ -86,6 +86,7 @@ Lokalni administratorski nalog aplikacije kreira se automatski, ali SEF i eOtpre
 1. SEF demo portal: `https://demoefaktura.mfin.gov.rs/` - u delu `Podešavanja / API menadžment` generisati ključ i aktivirati API status.
 2. eOtpremnice demo portal: `https://demoeotpremnica.mfin.gov.rs/` - registrovati subjekt preko eID-a i u podešavanjima generisati demo API ključ.
 3. U ovoj aplikaciji otvoriti `Integracije`, ostaviti okruženje `Demo` i nalepiti odgovarajući ključ za trenutno izabranu firmu.
+4. Posle čuvanja koristiti dugme `Proveri vezu`; provera je bezbedna i ne šalje dokument.
 
 API adrese se biraju na serveru iz fiksne liste zvaničnih Demo/Produkcija adresa. Time se sprečava da korisnički unos preusmeri worker na proizvoljan server. Izbor produkcije zahteva dodatnu potvrdu u interfejsu.
 
@@ -116,7 +117,7 @@ API adrese se biraju na serveru iz fiksne liste zvaničnih Demo/Produkcija adres
 
 ## Automatska sinhronizacija
 
-Worker periodično obrađuje svaki aktivni API ključ firme. SEF tokovi koriste poseban vremenski cursor za prodajne i ulazne fakture. eOtpremnice koriste zaseban datum/stranicu za zahteve, pošiljaoca, primaoca i prevoznika. Događaj se jedinstveno prepoznaje po firmi, servisu, toku i udaljenom identifikatoru, pa ponovno čitanje preklopljenog perioda ne pravi duplikate.
+Worker periodično obrađuje svaki aktivni API ključ firme. SEF tokovi koriste zaseban dnevni cursor za prodajne i ulazne fakture i, prema ugovoru servisa, traže isključivo datume iz prošlosti. eOtpremnice koriste zaseban datum/stranicu za zahteve, pošiljaoca, primaoca i prevoznika. Greška jednog toka ne prekida ostale tokove. Događaj se jedinstveno prepoznaje po firmi, servisu, toku i udaljenom identifikatoru, pa ponovno čitanje ne pravi duplikate.
 
 - `GET /api/v1/external-events` prikazuje primljene događaje.
 - `GET /api/v1/sync-cursors` prikazuje trenutno mesto svakog toka.

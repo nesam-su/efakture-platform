@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import quote, urlencode
 from uuid import UUID
 
+import httpx
 from fastapi import (
     APIRouter,
     Depends,
@@ -45,6 +46,9 @@ from app.dependencies import (
     tenant_context,
 )
 from app.integrations.environments import integration_base_url
+from app.integrations.eotpremnice import EotpremniceClient
+from app.integrations.http import GovernmentApiError
+from app.integrations.sef import SefClient
 from app.mail import enqueue_email
 from app.models import (
     AuditEvent,
@@ -820,6 +824,45 @@ async def list_credentials(
             )
         ).all()
     )
+
+
+@router.post("/integrations/{provider}/test", response_model=MessageResponse)
+async def test_credential(
+    provider: Provider,
+    context: TenantContext = Depends(require_roles(Role.owner, Role.admin)),
+    db: AsyncSession = Depends(get_db),
+):
+    credential = await db.scalar(
+        select(IntegrationCredential).where(
+            IntegrationCredential.organization_id == context.organization_id,
+            IntegrationCredential.provider == provider,
+            IntegrationCredential.is_active.is_(True),
+        )
+    )
+    if credential is None:
+        raise HTTPException(status_code=404, detail="Integracija nije povezana")
+
+    api_key = decrypt_secret(credential.encrypted_api_key)
+    try:
+        if provider == Provider.sef:
+            async with SefClient(api_key=api_key, base_url=credential.base_url) as client:
+                await client.version()
+        else:
+            async with EotpremniceClient(api_key=api_key, base_url=credential.base_url) as client:
+                await client.request_changes(datetime.now(UTC).date(), page=0)
+    except GovernmentApiError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Državni servis je odbio proveru (HTTP {exc.status_code})",
+        ) from None
+    except httpx.RequestError:
+        raise HTTPException(
+            status_code=502, detail="Državni servis trenutno nije dostupan"
+        ) from None
+
+    environment = credential.settings.get("environment", "demo")
+    label = "Demo" if environment == "demo" else "Produkcijska"
+    return MessageResponse(message=f"{label} veza je uspešno proverena.")
 
 
 @router.post("/documents", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)

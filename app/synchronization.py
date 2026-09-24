@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -44,6 +44,18 @@ def parse_event_datetime(value: Any) -> datetime | None:
     except ValueError:
         return None
     return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
+
+
+def sef_sync_date(
+    watermark: datetime | None, *, today: date, initial_lookback_days: int
+) -> date:
+    """Choose a past calendar date accepted by the SEF changes endpoints."""
+    latest_allowed = today - timedelta(days=1)
+    if watermark is not None:
+        candidate = watermark.astimezone(SERBIA).date()
+    else:
+        candidate = today - timedelta(days=min(max(initial_lookback_days, 1), 30))
+    return min(candidate, latest_allowed)
 
 
 def internal_status(remote_status: str | None) -> DocumentStatus:
@@ -254,12 +266,16 @@ async def sync_sef_stream(credential_id: UUID, direction: Literal["sales", "purc
             provider=Provider.sef,
             stream=stream,
         )
-        now = datetime.now(UTC)
-        changed_at = cursor.watermark or now - timedelta(days=settings.sync_initial_lookback_days)
+        today = datetime.now(SERBIA).date()
+        sync_date = sef_sync_date(
+            cursor.watermark,
+            today=today,
+            initial_lookback_days=settings.sync_initial_lookback_days,
+        )
         async with SefClient(
             api_key=decrypt_secret(credential.encrypted_api_key), base_url=credential.base_url
         ) as client:
-            changes = await client.invoice_changes(direction, changed_at)
+            changes = await client.invoice_changes(direction, sync_date)
             imported = 0
             for event in changes:
                 event_id = str(event.get("eventId", ""))
@@ -299,7 +315,8 @@ async def sync_sef_stream(credential_id: UUID, direction: Literal["sales", "purc
                         content=xml,
                     )
                 imported += int(is_new)
-        cursor.watermark = now - timedelta(seconds=settings.sync_overlap_seconds)
+        next_date = sync_date + timedelta(days=1)
+        cursor.watermark = datetime.combine(next_date, time.min, tzinfo=SERBIA).astimezone(UTC)
         cursor.page = 0
         await db.commit()
         return imported
@@ -449,14 +466,24 @@ async def active_credential_ids() -> AsyncIterator[tuple[UUID, Provider]]:
 async def run_sync_cycle() -> int:
     imported = 0
     async for credential_id, provider in active_credential_ids():
-        try:
-            if provider == Provider.sef:
-                imported += await sync_sef_stream(credential_id, "sales")
-                imported += await sync_sef_stream(credential_id, "purchase")
-            else:
-                imported += await sync_eot_stream(credential_id, None)
-                for role in ("suppliers", "customers", "carriers"):
+        if provider == Provider.sef:
+            for direction in ("sales", "purchase"):
+                try:
+                    imported += await sync_sef_stream(credential_id, direction)
+                except Exception:
+                    logger.exception(
+                        "Synchronization failed for credential %s stream sef:%s",
+                        credential_id,
+                        direction,
+                    )
+        else:
+            for role in (None, "suppliers", "customers", "carriers"):
+                try:
                     imported += await sync_eot_stream(credential_id, role)
-        except Exception:
-            logger.exception("Synchronization failed for credential %s", credential_id)
+                except Exception:
+                    logger.exception(
+                        "Synchronization failed for credential %s stream eotpremnice:%s",
+                        credential_id,
+                        role or "requests",
+                    )
     return imported

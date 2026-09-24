@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import date
 
 import httpx
 import pytest
@@ -76,16 +76,14 @@ async def test_eotpremnice_submit_and_pull_contract():
 
 
 @pytest.mark.asyncio
-async def test_sef_change_date_keeps_time_and_timezone():
+async def test_sef_change_query_uses_documented_past_date():
     async def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.params["date"] == "2026-09-23T10:11:12+00:00"
+        assert request.url.params["date"] == "2026-09-23"
         return httpx.Response(200, json=[])
 
     client = SefClient(api_key="secret", transport=httpx.MockTransport(handler))
     try:
-        result = await client.invoice_changes(
-            "purchase", datetime(2026, 9, 23, 10, 11, 12, tzinfo=UTC)
-        )
+        result = await client.invoice_changes("purchase", date(2026, 9, 23))
     finally:
         await client.aclose()
     assert result == []

@@ -179,9 +179,15 @@ async function loadIntegrations() {
   $("#integration-list").innerHTML = definitions.map(item => {
     const existing = state.integrations.find(value => value.provider === item.provider); const disabled = canAdminister() ? "" : "disabled";
     const environment = existing?.settings?.environment || (existing?.base_url.includes("demo") ? "demo" : "production");
-    return `<article class="panel integration-card"><h3>${item.name}</h3><span class="integration-state ${existing ? "connected" : ""}">${existing ? `${environment === "demo" ? "Demo" : "Produkcija"} povezano` : "Nije povezano"}</span><form class="integration-form" data-provider="${item.provider}"><label>Okruženje<select name="environment" ${disabled}><option value="demo" ${environment === "demo" ? "selected" : ""}>Demo - bez produkcionih dokumenata</option><option value="production" ${environment === "production" ? "selected" : ""}>Produkcija - stvarni dokumenti</option></select></label><p class="environment-warning">Za lokalno testiranje koristi Demo. API ključ mora biti generisan u istom demo portalu.</p><label>${existing ? "Novi API ključ (za zamenu)" : "API ključ"}<input name="api_key" type="password" autocomplete="new-password" required ${disabled}></label><button class="primary" ${disabled}>${existing ? "Sačuvaj povezivanje" : "Poveži servis"}</button></form></article>`;
+    return `<article class="panel integration-card"><h3>${item.name}</h3><span class="integration-state ${existing ? "connected" : ""}" data-integration-state="${item.provider}">${existing ? `${environment === "demo" ? "Demo" : "Produkcija"} povezano` : "Nije povezano"}</span><form class="integration-form" data-provider="${item.provider}"><label>Okruženje<select name="environment" ${disabled}><option value="demo" ${environment === "demo" ? "selected" : ""}>Demo - bez produkcionih dokumenata</option><option value="production" ${environment === "production" ? "selected" : ""}>Produkcija - stvarni dokumenti</option></select></label><p class="environment-warning">Za lokalno testiranje koristi Demo. API ključ mora biti generisan u istom demo portalu.</p><label>${existing ? "Novi API ključ (za zamenu)" : "API ključ"}<input name="api_key" type="password" autocomplete="new-password" required ${disabled}></label><div class="integration-actions"><button class="primary" ${disabled}>${existing ? "Sačuvaj povezivanje" : "Poveži servis"}</button>${existing ? `<button class="secondary test-integration" type="button" data-provider="${item.provider}" ${disabled}>Proveri vezu</button>` : ""}</div></form></article>`;
   }).join("");
   $$(".integration-form").forEach(form => form.addEventListener("submit", saveIntegration));
+  $$(".test-integration").forEach(button => button.addEventListener("click", testIntegration));
+}
+
+async function testIntegration(event) {
+  const button = event.currentTarget; const provider = button.dataset.provider; button.disabled = true;
+  try { const result = await api(`/api/v1/integrations/${provider}/test`, {method:"POST"}); const badge = $(`[data-integration-state="${provider}"]`); badge.textContent = "Veza proverena"; badge.classList.add("connected"); showToast(result.message); } catch (error) { showToast(error.message, true); } finally { button.disabled = false; }
 }
 
 async function saveIntegration(event) {

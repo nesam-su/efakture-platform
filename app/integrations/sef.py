@@ -58,7 +58,7 @@ class SefClient(ApiKeyClient):
     async def invoice_changes(
         self,
         direction: Literal["sales", "purchase"],
-        changed_at: datetime,
+        changed_at: date | datetime,
     ) -> list[dict[str, Any]]:
         path = f"/api/publicApi/{direction}-invoice/changes"
         response = await self._request("POST", path, params={"date": changed_at.isoformat()})
