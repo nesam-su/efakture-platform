@@ -7,6 +7,7 @@
   <title>eDokumenti</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/security.css">
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -27,8 +28,10 @@
         <form id="login-form">
           <label>Email adresa<input name="email" type="email" autocomplete="username" required></label>
           <label>Lozinka<input name="password" type="password" autocomplete="current-password" required></label>
+          <label>MFA ili rezervni kod <span class="optional">(ako je uključen)</span><input name="mfa_code" autocomplete="one-time-code" maxlength="20"></label>
           <button class="primary full" type="submit">Prijavi se</button>
         </form>
+        <button class="text-button" id="forgot-password" type="button">Zaboravljena lozinka?</button>
         <p class="form-error" id="login-error"></p>
         <details><summary>Prvo pokretanje sistema</summary><p>Početni administrator se jednom kreira preko <code>/api/v1/auth/bootstrap</code>.</p></details>
       </div>
@@ -82,7 +85,7 @@
 
         <section class="view" id="view-jobs"><div class="page-heading"><div><p class="eyebrow">OBRADA</p><h1>Poslovi slanja</h1><p class="muted">Pokušaji, ponavljanja i greške asinhronog workera.</p></div></div><div class="panel list-panel" id="jobs-list"></div></section>
         <section class="view" id="view-events"><div class="page-heading"><div><p class="eyebrow">SINHRONIZACIJA</p><h1>Spoljni događaji</h1><p class="muted">Promene preuzete iz SEF-a i sistema eOtpremnica.</p></div></div><div class="panel list-panel" id="events-list"></div></section>
-        <section class="view" id="view-members"><div class="page-heading"><div><p class="eyebrow">TIM</p><h1>Korisnici firme</h1><p class="muted">Članovi i njihove uloge u izabranoj firmi.</p></div><button class="primary" id="invite-button">+ Pozovi korisnika</button></div><div class="panel list-panel" id="members-list"></div><h2 class="section-heading">Moje aktivne sesije</h2><div class="panel list-panel" id="sessions-list"></div></section>
+        <section class="view" id="view-members"><div class="page-heading"><div><p class="eyebrow">TIM</p><h1>Korisnici firme</h1><p class="muted">Članovi i njihove uloge u izabranoj firmi.</p></div><button class="primary" id="invite-button">+ Pozovi korisnika</button></div><div class="panel list-panel" id="members-list"></div><h2 class="section-heading">Moje aktivne sesije</h2><div class="panel list-panel" id="sessions-list"></div><h2 class="section-heading">Dvofaktorska prijava</h2><div class="panel security-panel"><p class="muted">Povežite autentifikator koji podržava TOTP. Potvrda prikazuje rezervne kodove samo jednom.</p><form id="mfa-setup-form"><label>Potvrdite lozinku<input name="password" type="password" autocomplete="current-password" required></label><button class="primary" type="submit">Započni podešavanje</button></form><form id="mfa-confirm-form" hidden><div class="token-box" id="mfa-secret"></div><label>Šestocifreni kod<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label><button class="primary" type="submit">Uključi MFA</button></form><div id="mfa-result"></div></div></section>
         <section class="view" id="view-settings"><div class="page-heading"><div><p class="eyebrow">INTEGRACIJE</p><h1>Povezivanje servisa</h1><p class="muted">API ključevi se šifruju pre čuvanja i nikada se ne prikazuju nazad.</p></div></div><div class="integration-grid" id="integration-list"></div></section>
       </main>
     </div>
@@ -117,6 +120,26 @@
       <label>Uloga<select name="role"><option value="viewer">Pregled</option><option value="operator">Operater</option><option value="accountant">Knjigovođa</option><option value="admin">Administrator</option></select></label>
       <p class="muted small">Pozivni token će biti prikazan samo jednom nakon kreiranja.</p><p class="form-error" id="invite-error"></p>
       <div class="dialog-actions"><button type="button" class="secondary close-dialog">Odustani</button><button class="primary" type="submit">Kreiraj poziv</button></div>
+    </form>
+  </dialog>
+  <dialog id="reset-request-dialog">
+    <form id="reset-request-form">
+      <div class="dialog-heading"><div><p class="eyebrow">OPORAVAK NALOGA</p><h2>Promena lozinke</h2></div><button type="button" class="icon-button close-dialog" aria-label="Zatvori">×</button></div>
+      <p class="muted">Ako nalog postoji, poslaćemo jednokratni link na njegovu email adresu.</p>
+      <label>Email adresa<input name="email" type="email" autocomplete="email" required></label>
+      <p class="form-error" id="reset-request-error"></p>
+      <div class="dialog-actions"><button type="button" class="secondary close-dialog">Odustani</button><button class="primary" type="submit">Pošalji uputstvo</button></div>
+    </form>
+  </dialog>
+  <dialog id="reset-confirm-dialog">
+    <form id="reset-confirm-form">
+      <div class="dialog-heading"><div><p class="eyebrow">NOVA LOZINKA</p><h2>Postavite novu lozinku</h2></div></div>
+      <input name="token" type="hidden">
+      <label>Nova lozinka<input name="password" type="password" autocomplete="new-password" minlength="12" required></label>
+      <label>Ponovite lozinku<input name="confirm_password" type="password" autocomplete="new-password" minlength="12" required></label>
+      <p class="muted small">Najmanje 12 znakova. Posle promene sve postojeće sesije biće odjavljene.</p>
+      <p class="form-error" id="reset-confirm-error"></p>
+      <div class="dialog-actions"><button class="primary" type="submit">Promeni lozinku</button></div>
     </form>
   </dialog>
   <script src="/static/app.js" defer></script>

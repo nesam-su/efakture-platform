@@ -19,6 +19,38 @@ class BootstrapRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: SecretStr
+    mfa_code: str | None = Field(default=None, min_length=6, max_length=20)
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str = Field(min_length=32, max_length=200)
+    password: SecretStr = Field(min_length=12, max_length=200)
+    confirm_password: SecretStr = Field(min_length=12, max_length=200)
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+class MfaSetupRequest(BaseModel):
+    password: SecretStr
+
+
+class MfaSetupResponse(BaseModel):
+    secret: str
+    provisioning_uri: str
+
+
+class MfaConfirmRequest(BaseModel):
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+class MfaRecoveryCodesResponse(BaseModel):
+    recovery_codes: list[str]
 
 
 class TokenResponse(BaseModel):

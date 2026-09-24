@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import smtplib
 import socket
+import ssl
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -17,12 +19,15 @@ from app.db import SessionFactory
 from app.integrations.eotpremnice import EotpremniceClient
 from app.integrations.http import GovernmentApiError
 from app.integrations.sef import SefClient
+from app.mail import build_email
 from app.models import (
     AuditEvent,
     BackgroundJob,
     BusinessDocument,
     DocumentArtifact,
     DocumentStatus,
+    EmailOutbox,
+    EmailStatus,
     ExternalRequest,
     IntegrationCredential,
     JobStatus,
@@ -232,6 +237,85 @@ async def process_job(job_id: UUID) -> None:
         await fail_job(job_id, exc)
 
 
+async def claim_email() -> UUID | None:
+    if not settings.smtp_host:
+        return None
+    now = datetime.now(UTC)
+    stale_before = now - timedelta(seconds=settings.worker_lock_timeout_seconds)
+    async with SessionFactory() as db:
+        item = await db.scalar(
+            select(EmailOutbox)
+            .where(
+                or_(
+                    (
+                        EmailOutbox.status.in_([EmailStatus.queued, EmailStatus.retrying])
+                        & (EmailOutbox.available_at <= now)
+                    ),
+                    (
+                        (EmailOutbox.status == EmailStatus.sending)
+                        & (EmailOutbox.locked_at < stale_before)
+                    ),
+                )
+            )
+            .order_by(EmailOutbox.available_at, EmailOutbox.created_at)
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+        if item is None:
+            return None
+        item.status = EmailStatus.sending
+        item.attempts += 1
+        item.locked_at = now
+        item.locked_by = worker_id
+        await db.commit()
+        return item.id
+
+
+def _send_email_sync(item: EmailOutbox) -> None:
+    if not settings.smtp_host:
+        raise RuntimeError("SMTP server nije konfigurisan")
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30) as client:
+        client.ehlo()
+        if settings.smtp_starttls:
+            client.starttls(context=ssl.create_default_context())
+            client.ehlo()
+        if settings.smtp_username:
+            password = settings.smtp_password.get_secret_value() if settings.smtp_password else ""
+            client.login(settings.smtp_username, password)
+        client.send_message(build_email(item))
+
+
+async def process_email(email_id: UUID) -> None:
+    async with SessionFactory() as db:
+        item = await db.get(EmailOutbox, email_id)
+        if item is None:
+            return
+        try:
+            await asyncio.to_thread(_send_email_sync, item)
+        except Exception as exc:
+            logger.exception("Email %s failed", email_id)
+            now = datetime.now(UTC)
+            item.last_error = str(exc)[:4000]
+            item.locked_at = None
+            item.locked_by = None
+            if item.attempts < item.max_attempts:
+                item.status = EmailStatus.retrying
+                item.available_at = now + timedelta(
+                    seconds=min(900, 15 * (2 ** max(0, item.attempts - 1)))
+                )
+            else:
+                item.status = EmailStatus.failed
+            await db.commit()
+            return
+        item.status = EmailStatus.sent
+        item.sent_at = datetime.now(UTC)
+        item.text_body = "[Sadržaj uklonjen nakon uspešne isporuke]"
+        item.locked_at = None
+        item.locked_by = None
+        item.last_error = None
+        await db.commit()
+
+
 async def run_jobs() -> None:
     logger.info("Worker %s started", worker_id)
     while True:
@@ -240,6 +324,17 @@ async def run_jobs() -> None:
             await asyncio.sleep(settings.worker_poll_seconds)
             continue
         await process_job(job_id)
+
+
+async def run_email_delivery() -> None:
+    if not settings.smtp_host:
+        logger.warning("SMTP is not configured; email outbox delivery is disabled")
+    while True:
+        email_id = await claim_email()
+        if email_id is None:
+            await asyncio.sleep(settings.worker_poll_seconds)
+            continue
+        await process_email(email_id)
 
 
 async def run_synchronization() -> None:
@@ -251,7 +346,7 @@ async def run_synchronization() -> None:
 
 
 async def run() -> None:
-    await asyncio.gather(run_jobs(), run_synchronization())
+    await asyncio.gather(run_jobs(), run_synchronization(), run_email_delivery())
 
 
 if __name__ == "__main__":

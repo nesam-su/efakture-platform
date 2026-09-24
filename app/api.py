@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from urllib.parse import quote, urlencode
 from uuid import UUID
 
 from fastapi import (
@@ -13,7 +14,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse
-from sqlalchemy import func, select, text, tuple_
+from sqlalchemy import delete, func, select, text, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,12 +22,18 @@ from app.core.config import get_settings
 from app.core.security import (
     create_access_token,
     create_invitation_secret,
+    create_one_time_secret,
+    decrypt_secret,
     encrypt_secret,
+    generate_recovery_codes,
+    generate_totp_secret,
     hash_invitation_secret,
+    hash_one_time_secret,
     hash_password,
     login_throttle_key,
     verify_password,
     verify_password_safe,
+    verify_totp,
 )
 from app.db import get_db
 from app.dependencies import (
@@ -37,6 +44,7 @@ from app.dependencies import (
     require_roles,
     tenant_context,
 )
+from app.mail import enqueue_email
 from app.models import (
     AuditEvent,
     AuthSession,
@@ -51,7 +59,9 @@ from app.models import (
     LoginThrottle,
     Membership,
     MembershipInvitation,
+    MfaRecoveryCode,
     Organization,
+    PasswordResetToken,
     Provider,
     Role,
     SyncCursor,
@@ -73,8 +83,15 @@ from app.schemas import (
     JobOut,
     LoginRequest,
     MembershipOut,
+    MessageResponse,
+    MfaConfirmRequest,
+    MfaRecoveryCodesResponse,
+    MfaSetupRequest,
+    MfaSetupResponse,
     OrganizationCreate,
     OrganizationOut,
+    PasswordResetConfirm,
+    PasswordResetRequest,
     SyncCursorOut,
     TokenResponse,
 )
@@ -168,11 +185,37 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
             detail="Previše neuspešnih pokušaja. Pokušajte kasnije.",
             headers={"Retry-After": str(retry_after)},
         )
-    user = await db.scalar(select(User).where(User.email == email))
+    # Zaključavanje korisničkog reda sprečava paralelnu upotrebu istog TOTP intervala.
+    user = await db.scalar(select(User).where(User.email == email).with_for_update())
     password_valid = verify_password_safe(
         data.password.get_secret_value(), user.password_hash if user else None
     )
-    if user is None or not user.is_active or not password_valid:
+    mfa_valid = True
+    accepted_counter: int | None = None
+    recovery_code: MfaRecoveryCode | None = None
+    if user is not None and password_valid and user.totp_enabled_at is not None:
+        mfa_valid = False
+        supplied_code = (data.mfa_code or "").strip().upper()
+        if supplied_code.isdigit():
+            accepted_counter = verify_totp(
+                decrypt_secret(user.encrypted_totp_secret or ""),
+                supplied_code,
+                timestamp=int(now.timestamp()),
+                last_counter=user.totp_last_counter,
+            )
+            mfa_valid = accepted_counter is not None
+        elif supplied_code:
+            recovery_code = await db.scalar(
+                select(MfaRecoveryCode)
+                .where(
+                    MfaRecoveryCode.user_id == user.id,
+                    MfaRecoveryCode.code_hash == hash_one_time_secret(supplied_code),
+                    MfaRecoveryCode.used_at.is_(None),
+                )
+                .with_for_update()
+            )
+            mfa_valid = recovery_code is not None
+    if user is None or not user.is_active or not password_valid or not mfa_valid:
         if throttle is None:
             throttle = LoginThrottle(
                 key_hash=throttle_key,
@@ -188,9 +231,13 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
         if throttle.failed_attempts >= settings.login_max_attempts:
             throttle.blocked_until = now + timedelta(seconds=settings.login_block_seconds)
         await db.commit()
-        raise HTTPException(status_code=401, detail="Pogrešan email ili lozinka")
+        raise HTTPException(status_code=401, detail="Pogrešan email, lozinka ili MFA kod")
     if throttle is not None:
         await db.delete(throttle)
+    if accepted_counter is not None:
+        user.totp_last_counter = accepted_counter
+    if recovery_code is not None:
+        recovery_code.used_at = now
     session = await _create_session(db, user, request)
     db.add(
         AuditEvent(
@@ -203,6 +250,194 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
     )
     await db.commit()
     return TokenResponse(access_token=create_access_token(user.id, session.id))
+
+
+@router.post(
+    "/auth/password-reset/request",
+    response_model=MessageResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def request_password_reset(
+    data: PasswordResetRequest, request: Request, db: AsyncSession = Depends(get_db)
+):
+    generic = "Ako nalog postoji, poslali smo uputstvo za promenu lozinke."
+    now = datetime.now(UTC)
+    request_key = login_throttle_key(f"password-reset:{data.email.lower()}", _request_ip(request))
+    throttle = await db.scalar(
+        select(LoginThrottle).where(LoginThrottle.key_hash == request_key).with_for_update()
+    )
+    if throttle is not None and throttle.blocked_until and throttle.blocked_until > now:
+        return MessageResponse(message=generic)
+    if throttle is None:
+        throttle = LoginThrottle(
+            key_hash=request_key,
+            failed_attempts=1,
+            window_started_at=now,
+        )
+        db.add(throttle)
+    else:
+        throttle.failed_attempts += 1
+        throttle.window_started_at = now
+    throttle.blocked_until = now + timedelta(seconds=60)
+    user = await db.scalar(select(User).where(User.email == data.email.lower(), User.is_active))
+    verify_password_safe("password-reset-timing", None)
+    if user is None:
+        await db.commit()
+        return MessageResponse(message=generic)
+
+    previous = (
+        await db.scalars(
+            select(PasswordResetToken).where(
+                PasswordResetToken.user_id == user.id,
+                PasswordResetToken.used_at.is_(None),
+            )
+        )
+    ).all()
+    for item in previous:
+        item.used_at = now
+    token, token_hash = create_one_time_secret()
+    db.add(
+        PasswordResetToken(
+            user_id=user.id,
+            token_hash=token_hash,
+            expires_at=now + timedelta(minutes=settings.password_reset_minutes),
+            requested_ip=_request_ip(request),
+        )
+    )
+    reset_url = f"{settings.public_base_url}/?reset_token={quote(token)}"
+    db.add(
+        enqueue_email(
+            recipient=user.email,
+            event_type="password_reset",
+            subject="Promena lozinke za eDokumenti",
+            text_body=(
+                f"Zdravo {user.full_name},\n\n"
+                f"Za promenu lozinke otvorite ovaj jednokratni link:\n{reset_url}\n\n"
+                f"Link važi {settings.password_reset_minutes} minuta. "
+                "Ako niste poslali zahtev, zanemarite ovu poruku."
+            ),
+        )
+    )
+    await db.commit()
+    return MessageResponse(message=generic)
+
+
+@router.post("/auth/password-reset/confirm", response_model=MessageResponse)
+async def confirm_password_reset(
+    data: PasswordResetConfirm, request: Request, db: AsyncSession = Depends(get_db)
+):
+    password = data.password.get_secret_value()
+    if password != data.confirm_password.get_secret_value():
+        raise HTTPException(status_code=422, detail="Lozinke se ne podudaraju")
+    now = datetime.now(UTC)
+    reset = await db.scalar(
+        select(PasswordResetToken)
+        .where(PasswordResetToken.token_hash == hash_one_time_secret(data.token))
+        .with_for_update()
+    )
+    if reset is None or reset.used_at is not None or reset.expires_at <= now:
+        raise HTTPException(status_code=400, detail="Link nije važeći ili je istekao")
+    user = await db.get(User, reset.user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=400, detail="Link nije važeći ili je istekao")
+    user.password_hash = hash_password(password)
+    reset.used_at = now
+    sessions = (
+        await db.scalars(
+            select(AuthSession).where(
+                AuthSession.user_id == user.id,
+                AuthSession.revoked_at.is_(None),
+            )
+        )
+    ).all()
+    for session in sessions:
+        session.revoked_at = now
+    db.add(
+        AuditEvent(
+            actor_user_id=user.id,
+            action="auth.password_reset",
+            entity_type="user",
+            entity_id=str(user.id),
+            ip_address=_request_ip(request),
+        )
+    )
+    db.add(
+        enqueue_email(
+            recipient=user.email,
+            event_type="password_changed",
+            subject="Lozinka za eDokumenti je promenjena",
+            text_body=(
+                f"Zdravo {user.full_name},\n\nLozinka je uspešno promenjena. "
+                "Sve prethodne sesije su opozvane. Ako ovo niste bili vi, "
+                "odmah kontaktirajte administratora."
+            ),
+        )
+    )
+    await db.commit()
+    return MessageResponse(message="Lozinka je promenjena. Prijavite se ponovo.")
+
+
+@router.post("/auth/mfa/setup", response_model=MfaSetupResponse)
+async def setup_mfa(
+    data: MfaSetupRequest,
+    auth: AuthContext = Depends(current_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    if not verify_password(data.password.get_secret_value(), auth.user.password_hash):
+        raise HTTPException(status_code=400, detail="Pogrešna lozinka")
+    if auth.user.totp_enabled_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="MFA je već uključen; zamena zahteva poseban bezbednosni postupak",
+        )
+    secret = generate_totp_secret()
+    auth.user.encrypted_totp_secret = encrypt_secret(secret)
+    auth.user.totp_enabled_at = None
+    auth.user.totp_last_counter = None
+    await db.execute(delete(MfaRecoveryCode).where(MfaRecoveryCode.user_id == auth.user.id))
+    await db.commit()
+    label = quote(f"eDokumenti:{auth.user.email}")
+    query = urlencode(
+        {"secret": secret, "issuer": "eDokumenti", "algorithm": "SHA1", "digits": 6, "period": 30}
+    )
+    return MfaSetupResponse(secret=secret, provisioning_uri=f"otpauth://totp/{label}?{query}")
+
+
+@router.post("/auth/mfa/confirm", response_model=MfaRecoveryCodesResponse)
+async def confirm_mfa(
+    data: MfaConfirmRequest,
+    auth: AuthContext = Depends(current_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    if not auth.user.encrypted_totp_secret or auth.user.totp_enabled_at is not None:
+        raise HTTPException(status_code=409, detail="MFA podešavanje nije započeto")
+    now = datetime.now(UTC)
+    counter = verify_totp(
+        decrypt_secret(auth.user.encrypted_totp_secret),
+        data.code,
+        timestamp=int(now.timestamp()),
+    )
+    if counter is None:
+        raise HTTPException(status_code=400, detail="Kod nije važeći")
+    recovery_codes = generate_recovery_codes()
+    auth.user.totp_enabled_at = now
+    auth.user.totp_last_counter = counter
+    db.add_all(
+        [
+            MfaRecoveryCode(user_id=auth.user.id, code_hash=hash_one_time_secret(code))
+            for code in recovery_codes
+        ]
+    )
+    db.add(
+        AuditEvent(
+            actor_user_id=auth.user.id,
+            action="auth.mfa.enabled",
+            entity_type="user",
+            entity_id=str(auth.user.id),
+        )
+    )
+    await db.commit()
+    return MfaRecoveryCodesResponse(recovery_codes=recovery_codes)
 
 
 @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)

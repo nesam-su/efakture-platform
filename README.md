@@ -30,6 +30,9 @@ Integracioni sloj je mapiran prema lokalnoj dokumentaciji od 31. jula i 21. avgu
 - kreiranje dokumenta, XML upload, slanje u red i preuzimanje priloga bez Swagger-a.
 - JWT vezan za opozivu serversku sesiju, pregled uređaja i bezbedna odjava;
 - distribuirana PostgreSQL zaštita prijave i sigurnosna HTTP/CSP zaglavlja.
+- jednokratni reset lozinke preko email linka, uz opoziv svih postojećih sesija;
+- trajni PostgreSQL email outbox sa SMTP STARTTLS slanjem i kontrolisanim ponavljanjem;
+- TOTP dvofaktorska prijava, zaštita od ponovne upotrebe koda i jednokratni rezervni kodovi.
 
 ## Lokalno pokretanje
 
@@ -41,7 +44,7 @@ Integracioni sloj je mapiran prema lokalnoj dokumentaciji od 31. jula i 21. avgu
    python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
    ```
 
-3. Dodati u `.env` i promenljive bez prefiksa: `POSTGRES_PASSWORD` i `APP_DOMAIN`.
+3. Dodati u `.env` i promenljive bez prefiksa: `POSTGRES_PASSWORD` i `APP_DOMAIN`. Za reset lozinke obavezno podesiti `APP_PUBLIC_BASE_URL` i SMTP promenljive iz primera.
 4. Pokrenuti: `docker compose up --build -d`.
 5. Kreirati prvog administratora jednim pozivom na `POST /api/v1/auth/bootstrap` (Swagger je na `/api/docs` u development režimu).
 
@@ -52,7 +55,7 @@ Nikada ne čuvati produkcijske tajne u Git-u. Bootstrap endpoint se automatski z
 1. Prebaciti storage adapter na Hetzner Object Storage sa enkripcijom i retention pravilima.
 2. Dodati obradu eOtpremnice `ApplicationResponse` XML događaja i njihovo vezivanje za izvorni dokument.
 3. Implementirati generatore UBL dokumenata kao tipizirane forme, uz obaveznu proveru kroz državne XML validatore.
-4. Dodati reset lozinke i 2FA pre produkcije; pozivnice i opozive sesije su implementirane.
+4. Dodati administrativni tok za bezbedan reset MFA i obavezno ponovno potvrđivanje identiteta za osetljive promene.
 5. Dodati PostgreSQL RLS kao drugi sloj tenant izolacije.
 6. Tek uz zasebne sandbox ključeve izvršiti end-to-end testove prema demo okruženjima.
 
@@ -85,5 +88,9 @@ Worker periodično obrađuje svaki aktivni API ključ firme. SEF tokovi koriste 
 Nakon prijave korisnik bira firmu kojoj pripada. Interfejs automatski šalje `X-Organization-Id` uz svaki tenant zahtev i prikazuje akcije prema ulozi korisnika. Vlasnik i administrator mogu da povežu servise i izdaju pozivnice; knjigovođa i operater mogu da kreiraju i šalju dokumente; korisnik sa ulogom pregleda nema akcije izmene.
 
 JWT sadrži identifikator serverske sesije. Svaki zaštićeni zahtev proverava da sesija nije istekla ili opozvana. Korisnik može pregledati svoje aktivne uređaje i opozvati pojedinačnu sesiju; odjava opoziva trenutnu sesiju pre brisanja tokena iz browsera.
+
+Reset lozinke uvek vraća isti javni odgovor bez obzira da li email postoji. Link sadrži nasumični token koji se u bazi čuva samo kao SHA-256 otisak, ističe i može se upotrebiti samo jednom. Worker šalje poruke iz `email_outbox` tabele; bez podešenog `APP_SMTP_HOST` poruke ostaju u redu i taj režim nije pogodan za produkciju.
+
+TOTP se uključuje u delu „Korisnici“. Tajna se čuva Fernet-šifrovano, prihvata se samo mali vremenski prozor, a isti vremenski kod se ne može upotrebiti dva puta. Rezervni kodovi se prikazuju samo jednom i svaki se pojedinačno poništava nakon upotrebe.
 
 Detaljnije odluke su u [`docs/ARHITEKTURA.md`](docs/ARHITEKTURA.md), zahtevi u [`docs/MATRICA-ZAHTEVA.md`](docs/MATRICA-ZAHTEVA.md), a tehnički nalazi u [`docs/ZAHTEVI-IZ-DOKUMENTACIJE.md`](docs/ZAHTEVI-IZ-DOKUMENTACIJE.md).

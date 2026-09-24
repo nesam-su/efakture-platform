@@ -50,6 +50,31 @@ def test_login_throttle_key_is_normalized_and_ip_scoped():
     )
 
 
+def test_totp_matches_rfc_6238_sha1_vector():
+    from app.core.security import totp_code
+
+    # RFC 6238 Appendix B secret "12345678901234567890", timestamp 59.
+    assert totp_code("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", timestamp=59, digits=8) == "94287082"
+
+
+def test_totp_rejects_replayed_counter():
+    from app.core.security import totp_code, verify_totp
+
+    secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+    code = totp_code(secret, timestamp=59)
+    counter = verify_totp(secret, code, timestamp=59)
+    assert counter == 1
+    assert verify_totp(secret, code, timestamp=59, last_counter=counter) is None
+
+
+def test_recovery_codes_are_distinct_and_hashable():
+    from app.core.security import generate_recovery_codes, hash_one_time_secret
+
+    codes = generate_recovery_codes()
+    assert len(codes) == len(set(codes)) == 10
+    assert all(len(hash_one_time_secret(code)) == 64 for code in codes)
+
+
 def test_public_pages(monkeypatch):
     monkeypatch.setenv("APP_SECRET_KEY", "x" * 48)
     monkeypatch.setenv("APP_CREDENTIAL_ENCRYPTION_KEY", Fernet.generate_key().decode())
@@ -63,6 +88,7 @@ def test_public_pages(monkeypatch):
     assert 'id="document-dialog"' in response.text
     assert 'id="organization-select"' in response.text
     assert client.get("/static/app.css").status_code == 200
+    assert client.get("/static/security.css").status_code == 200
     assert client.get("/static/app.js").status_code == 200
     assert client.get("/static/favicon.svg").status_code == 200
     assert response.headers["X-Frame-Options"] == "DENY"

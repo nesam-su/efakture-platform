@@ -191,7 +191,60 @@ function showView(name) {
 
 $("#login-form").addEventListener("submit", async event => {
   event.preventDefault(); const data = Object.fromEntries(new FormData(event.target));
+  if (!data.mfa_code) delete data.mfa_code;
   try { const result = await api("/api/v1/auth/login", {method:"POST", body:JSON.stringify(data), tenant:false}); sessionStorage.setItem(tokenKey, result.access_token); $("#login-error").textContent = ""; await initializeApp(); } catch (error) { $("#login-error").textContent = error.message; }
+});
+
+$("#forgot-password").onclick = () => {
+  $("#reset-request-error").textContent = "";
+  $("#reset-request-dialog").showModal();
+};
+
+$("#reset-request-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  try {
+    const result = await api("/api/v1/auth/password-reset/request", {method:"POST", body:JSON.stringify(Object.fromEntries(new FormData(form))), tenant:false});
+    $("#reset-request-dialog").close();
+    form.reset();
+    showToast(result.message);
+  } catch (error) { $("#reset-request-error").textContent = error.message; }
+});
+
+$("#reset-confirm-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = Object.fromEntries(new FormData(form));
+  try {
+    const result = await api("/api/v1/auth/password-reset/confirm", {method:"POST", body:JSON.stringify(data), tenant:false});
+    $("#reset-confirm-dialog").close();
+    history.replaceState({}, "", location.pathname);
+    form.reset();
+    showToast(result.message);
+  } catch (error) { $("#reset-confirm-error").textContent = error.message; }
+});
+
+$("#mfa-setup-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  try {
+    const result = await api("/api/v1/auth/mfa/setup", {method:"POST", body:JSON.stringify(Object.fromEntries(new FormData(form))), tenant:false});
+    $("#mfa-secret").innerHTML = `<strong>Ručni ključ:</strong> ${escapeHtml(result.secret)}<br><small>URI: ${escapeHtml(result.provisioning_uri)}</small>`;
+    $("#mfa-confirm-form").hidden = false;
+    $("#mfa-result").innerHTML = "";
+    form.reset();
+  } catch (error) { showToast(error.message, true); }
+});
+
+$("#mfa-confirm-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  try {
+    const result = await api("/api/v1/auth/mfa/confirm", {method:"POST", body:JSON.stringify(Object.fromEntries(new FormData(form))), tenant:false});
+    $("#mfa-result").innerHTML = `<p><strong>MFA je uključen. Sačuvajte rezervne kodove:</strong></p><div class="recovery-codes">${result.recovery_codes.map(code => `<code>${escapeHtml(code)}</code>`).join("")}</div>`;
+    form.hidden = true;
+    showToast("Dvofaktorska prijava je uključena.");
+  } catch (error) { showToast(error.message, true); }
 });
 
 $("#organization-select").addEventListener("change", async event => {
@@ -228,5 +281,11 @@ $("#menu-button").onclick = () => $(".sidebar").classList.toggle("open");
 $$('.close-dialog').forEach(button => button.onclick = () => button.closest("dialog").close());
 $$('.nav-item[data-view]').forEach(button => button.onclick = () => showView(button.dataset.view));
 [$("#document-search"), $("#provider-filter"), $("#status-filter")].forEach(control => control.addEventListener("input", renderDocuments));
+
+const resetToken = new URLSearchParams(location.search).get("reset_token");
+if (resetToken) {
+  $("#reset-confirm-form [name=token]").value = resetToken;
+  $("#reset-confirm-dialog").showModal();
+}
 
 if (sessionStorage.getItem(tokenKey)) initializeApp();

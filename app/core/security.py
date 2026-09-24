@@ -1,5 +1,8 @@
 import hashlib
+import hmac
 import secrets
+import struct
+from base64 import b32decode, b32encode
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -80,3 +83,49 @@ def create_invitation_secret() -> tuple[str, str]:
 
 def hash_invitation_secret(secret: str) -> str:
     return hashlib.sha256(secret.encode()).hexdigest()
+
+
+def create_one_time_secret() -> tuple[str, str]:
+    secret = secrets.token_urlsafe(32)
+    return secret, hash_one_time_secret(secret)
+
+
+def hash_one_time_secret(secret: str) -> str:
+    return hashlib.sha256(secret.encode()).hexdigest()
+
+
+def generate_totp_secret() -> str:
+    return b32encode(secrets.token_bytes(20)).decode().rstrip("=")
+
+
+def totp_code(secret: str, *, timestamp: int, step: int = 30, digits: int = 6) -> str:
+    counter = timestamp // step
+    padded = secret.upper() + "=" * (-len(secret) % 8)
+    key = b32decode(padded, casefold=True)
+    digest = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    binary = struct.unpack(">I", digest[offset : offset + 4])[0] & 0x7FFFFFFF
+    return str(binary % (10**digits)).zfill(digits)
+
+
+def verify_totp(
+    secret: str,
+    code: str,
+    *,
+    timestamp: int,
+    last_counter: int | None = None,
+    window: int = 1,
+) -> int | None:
+    if len(code) != 6 or not code.isdigit():
+        return None
+    current = timestamp // 30
+    for counter in range(current - window, current + window + 1):
+        if last_counter is not None and counter <= last_counter:
+            continue
+        if hmac.compare_digest(totp_code(secret, timestamp=counter * 30), code):
+            return counter
+    return None
+
+
+def generate_recovery_codes(count: int = 10) -> list[str]:
+    return [f"{secrets.token_hex(3)}-{secrets.token_hex(3)}".upper() for _ in range(count)]

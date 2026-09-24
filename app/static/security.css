@@ -1,0 +1,52 @@
+.optional {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.text-button {
+  margin-top: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--green);
+  font-weight: 750;
+}
+
+.security-panel {
+  max-width: 760px;
+  padding: 22px;
+}
+
+.security-panel form {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin-top: 16px;
+}
+
+.security-panel .token-box {
+  grid-column: 1 / -1;
+}
+
+.recovery-codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.recovery-codes code {
+  padding: 9px;
+  border-radius: 7px;
+  background: #edf6f3;
+  color: #164a42;
+  text-align: center;
+}
+
+@media (max-width: 600px) {
+  .security-panel form,
+  .recovery-codes {
+    grid-template-columns: 1fr;
+  }
+}
