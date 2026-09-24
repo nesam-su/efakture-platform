@@ -36,6 +36,33 @@ Integracioni sloj je mapiran prema lokalnoj dokumentaciji od 31. jula i 21. avgu
 
 ## Lokalno pokretanje
 
+### Izolovana Docker test verzija na Windows-u
+
+Lokalni profil ne pokreće Caddy i ne zauzima portove 80/443. Aplikacija je vezana samo za `127.0.0.1:18080`, a Mailpit test sanduče samo za `127.0.0.1:18025`. PostgreSQL nije izložen host računaru.
+
+```powershell
+.\scripts\Initialize-LocalEnvironment.ps1
+.\scripts\Start-LocalTest.ps1
+```
+
+Skripta generiše lokalne tajne i test administratorsku lozinku u datotekama koje su isključene iz Git-a, gradi kontejnere, izvršava migracije i proverava prijavu i pristup test firmi. Email poruke ne napuštaju računar već se vide u Mailpit-u.
+
+Ako antivirus koristi HTTPS skeniranje, inicijalizaciona skripta izvozi samo njegov javni root sertifikat u Git-ignorisani `.docker-local` direktorijum i bira `Dockerfile.local`. TLS provera ostaje uključena i sistemski CA bundle koristi se i za lokalne izlazne API pozive; privatni ključevi se ne izvoze niti se koristi nesigurni `trusted-host` režim. `.dockerignore` sprečava slanje lokalnih tajni u Docker build context.
+
+Zaustavljanje bez brisanja podataka:
+
+```powershell
+.\scripts\Stop-LocalTest.ps1
+```
+
+Brisanje isključivo lokalnih test volumena radi potpuno svežeg testa:
+
+```powershell
+.\scripts\Stop-LocalTest.ps1 -ResetData
+```
+
+### Standardni serverski profil
+
 1. Kopirati `.env.example` u `.env`.
 2. Napraviti vrednosti:
 

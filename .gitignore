@@ -1,4 +1,7 @@
 .env
+.env.local
+.local-test-credentials.json
+.docker-local/
 .venv/
 __pycache__/
 .pytest_cache/

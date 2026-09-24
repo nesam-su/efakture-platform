@@ -1,0 +1,76 @@
+name: efakture-local
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: ${LOCAL_DOCKERFILE:-Dockerfile}
+    restart: unless-stopped
+    env_file: .env.local
+    environment:
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*"]
+    ports:
+      - "127.0.0.1:18080:8000"
+    volumes:
+      - local_artifacts_data:/data/artifacts
+    networks: [local]
+
+  worker:
+    build:
+      context: .
+      dockerfile: ${LOCAL_DOCKERFILE:-Dockerfile}
+    restart: unless-stopped
+    env_file: .env.local
+    environment:
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+    depends_on:
+      db:
+        condition: service_healthy
+      app:
+        condition: service_started
+      mailpit:
+        condition: service_started
+    command: ["python", "-m", "app.worker"]
+    volumes:
+      - local_artifacts_data:/data/artifacts
+    networks: [local]
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: efakture
+      POSTGRES_USER: efakture
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.local}
+    volumes:
+      - local_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U efakture -d efakture"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [local]
+
+  mailpit:
+    image: axllent/mailpit:v1.31.1
+    restart: unless-stopped
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: 500
+    ports:
+      - "127.0.0.1:18025:8025"
+    volumes:
+      - local_mailpit_data:/data
+    networks: [local]
+
+volumes:
+  local_postgres_data:
+  local_artifacts_data:
+  local_mailpit_data:
+
+networks:
+  local:
