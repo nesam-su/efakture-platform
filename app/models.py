@@ -175,6 +175,7 @@ class Organization(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(200))
     tax_id: Mapped[str] = mapped_column(String(20), index=True)
     registration_number: Mapped[str | None] = mapped_column(String(30))
+    profile: Mapped[dict] = mapped_column(JSONB, default=dict)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 

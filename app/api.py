@@ -1,6 +1,6 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from urllib.parse import quote, urlencode
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 from fastapi import (
@@ -78,7 +78,9 @@ from app.schemas import (
     BootstrapRequest,
     CredentialOut,
     CredentialUpsert,
+    DespatchFormCreate,
     DocumentCreate,
+    DocumentFormCreate,
     DocumentOut,
     ExternalEventOut,
     InvitationAccept,
@@ -95,12 +97,14 @@ from app.schemas import (
     MfaSetupResponse,
     OrganizationCreate,
     OrganizationOut,
+    OrganizationProfileUpdate,
     PasswordResetConfirm,
     PasswordResetRequest,
     SyncCursorOut,
     TokenResponse,
 )
 from app.storage import ArtifactTooLarge, LocalArtifactStore
+from app.ubl import generate_despatch_xml, generate_invoice_xml, invoice_totals
 
 router = APIRouter(prefix="/api/v1")
 settings = get_settings()
@@ -608,6 +612,7 @@ async def organizations(user: User = Depends(current_user), db: AsyncSession = D
             name=organization.name,
             tax_id=organization.tax_id,
             registration_number=organization.registration_number,
+            profile=organization.profile,
             role=role,
         )
         for organization, role in rows
@@ -640,7 +645,39 @@ async def create_organization(
         name=organization.name,
         tax_id=organization.tax_id,
         registration_number=organization.registration_number,
+        profile=organization.profile,
         role=Role.owner,
+    )
+
+
+@router.patch("/organizations/current", response_model=OrganizationOut)
+async def update_organization_profile(
+    data: OrganizationProfileUpdate,
+    context: TenantContext = Depends(require_roles(Role.owner, Role.admin)),
+    db: AsyncSession = Depends(get_db),
+):
+    organization = await db.get(Organization, context.organization_id)
+    if organization is None:
+        raise HTTPException(status_code=404, detail="Firma nije pronađena")
+    organization.profile = data.model_dump(mode="json")
+    db.add(
+        AuditEvent(
+            organization_id=organization.id,
+            actor_user_id=context.user.id,
+            action="organization.profile.update",
+            entity_type="organization",
+            entity_id=str(organization.id),
+        )
+    )
+    await db.commit()
+    await db.refresh(organization)
+    return OrganizationOut(
+        id=organization.id,
+        name=organization.name,
+        tax_id=organization.tax_id,
+        registration_number=organization.registration_number,
+        profile=organization.profile,
+        role=context.role,
     )
 
 
@@ -895,6 +932,109 @@ async def create_document(
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Idempotency ključ već postoji") from None
+    await db.refresh(document)
+    return document
+
+
+@router.post(
+    "/documents/from-form", response_model=DocumentOut, status_code=status.HTTP_201_CREATED
+)
+async def create_document_from_form(
+    data: DocumentFormCreate,
+    context: TenantContext = Depends(
+        require_roles(Role.owner, Role.admin, Role.accountant, Role.operator)
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    organization = await db.get(Organization, context.organization_id)
+    if organization is None:
+        raise HTTPException(status_code=404, detail="Firma nije pronađena")
+    try:
+        if isinstance(data, DespatchFormCreate):
+            xml = generate_despatch_xml(organization, data)
+            provider = Provider.eotpremnice
+            document_type = "despatch_advice"
+            currency = None
+            total_amount = None
+            filename = f"otpremnica-{data.document_number}.xml"
+        else:
+            xml = generate_invoice_xml(organization, data)
+            provider = Provider.sef
+            document_type = "sales_invoice"
+            currency = data.currency.upper()
+            total_amount = invoice_totals(data)[2]
+            filename = f"faktura-{data.document_number}.xml"
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Dopunite poslovni profil izabrane firme pre kreiranja dokumenta",
+        ) from exc
+
+    document = BusinessDocument(
+        organization_id=organization.id,
+        provider=provider,
+        direction=Direction.outbound,
+        document_type=document_type,
+        document_number=data.document_number,
+        idempotency_key=f"form-{uuid4()}",
+        issue_date=datetime.combine(data.issue_date, time.min, tzinfo=UTC),
+        counterparty_name=data.customer.name,
+        counterparty_tax_id=data.customer.tax_id,
+        currency=currency,
+        total_amount=total_amount,
+        payload={"source": "business_form", "form": data.model_dump(mode="json")},
+    )
+    db.add(document)
+    stored = None
+    try:
+        await db.flush()
+        stored = await artifact_store.put_bytes(
+            organization_id=organization.id,
+            document_id=document.id,
+            filename=filename,
+            content=xml,
+        )
+        artifact = DocumentArtifact(
+            organization_id=organization.id,
+            document_id=document.id,
+            kind="generated_xml",
+            object_key=stored.object_key,
+            content_type="application/xml",
+            size_bytes=stored.size_bytes,
+            sha256=stored.sha256,
+        )
+        db.add(artifact)
+        await db.flush()
+        if data.queue_after_create:
+            db.add(
+                BackgroundJob(
+                    organization_id=organization.id,
+                    document_id=document.id,
+                    kind="send_document",
+                    payload={"artifact_id": str(artifact.id)},
+                )
+            )
+            document.status = DocumentStatus.queued
+        db.add(
+            AuditEvent(
+                organization_id=organization.id,
+                actor_user_id=context.user.id,
+                action="document.generate",
+                entity_type="business_document",
+                entity_id=str(document.id),
+                details={
+                    "provider": provider.value,
+                    "document_type": document_type,
+                    "queued": data.queue_after_create,
+                },
+            )
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        if stored is not None:
+            artifact_store.delete(stored.object_key)
+        raise
     await db.refresh(document)
     return document
 

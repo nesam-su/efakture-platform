@@ -92,10 +92,19 @@ async function initializeApp() {
 }
 
 async function loadWorkspace() {
+  renderOrganizationProfile();
   const loaders = [loadDocuments(), loadJobs(), loadEvents(), loadMembers(), loadSessions(), loadIntegrations()];
   const results = await Promise.allSettled(loaders);
   const failed = results.find(result => result.status === "rejected");
   if (failed) showToast(failed.reason.message, true);
+}
+
+function renderOrganizationProfile() {
+  const form = $("#organization-profile-form"); const profile = state.organization?.profile || {};
+  form.reset();
+  Object.entries(profile).forEach(([name, value]) => { if (form.elements[name]) form.elements[name].value = value || ""; });
+  form.elements.country_code.value = profile.country_code || "RS";
+  form.querySelectorAll("input,button").forEach(control => { control.disabled = !canAdminister(); });
 }
 
 async function loadDocuments() {
@@ -196,6 +205,17 @@ async function saveIntegration(event) {
   try { await api("/api/v1/integrations", {method:"PUT", body:JSON.stringify({provider:form.dataset.provider, environment:data.environment, api_key:data.api_key, settings:{}})}); form.reset(); showToast(`${data.environment === "demo" ? "Demo" : "Produkcijsko"} povezivanje je sačuvano.`); await loadIntegrations(); } catch (error) { showToast(error.message, true); }
 }
 
+$("#organization-profile-form").addEventListener("submit", async event => {
+  event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form));
+  ["bank_account", "phone", "jbkjs"].forEach(name => { if (!data[name]) data[name] = null; });
+  data.country_code = data.country_code.toUpperCase();
+  try {
+    const updated = await api("/api/v1/organizations/current", {method:"PATCH", body:JSON.stringify(data)});
+    state.organizations = state.organizations.map(item => item.id === updated.id ? updated : item);
+    renderOrganizationSelect(updated.id); renderOrganizationProfile(); showToast("Podaci firme su sačuvani.");
+  } catch (error) { showToast(error.message, true); }
+});
+
 function showView(name) {
   $$(".view").forEach(view => view.classList.toggle("active", view.id === `view-${name}`));
   $$(".nav-item[data-view]").forEach(item => item.classList.toggle("active", item.dataset.view === name));
@@ -283,14 +303,49 @@ $("#organization-form").addEventListener("submit", async event => {
   } catch (error) { $("#organization-error").textContent = error.message; }
 });
 
+let documentLineSequence = 0;
+
+function addDocumentLine() {
+  documentLineSequence += 1;
+  const row = document.createElement("div"); row.className = "document-line";
+  row.innerHTML = `<div class="line-heading"><strong>Stavka ${documentLineSequence}</strong><button type="button" class="icon-button remove-line" aria-label="Ukloni stavku">×</button></div><div class="form-grid"><label class="span-2">Naziv<input name="line_name" required maxlength="300"></label><label>Šifra artikla<input name="line_sku" maxlength="100"></label><label>GTIN<input name="line_gtin" maxlength="30"></label><label>Količina<input name="line_quantity" type="number" min="0.000001" step="0.000001" value="1" required></label><label>Jedinica mere<input name="line_unit" value="H87" minlength="2" maxlength="3" required></label><label class="invoice-line-field">Cena bez PDV<input name="line_price" type="number" min="0" step="0.01" required></label><label class="invoice-line-field">PDV stopa %<input name="line_vat_rate" type="number" min="0" max="100" step="0.01" value="20" required></label><label class="invoice-line-field">PDV kategorija<select name="line_vat_category"><option value="S">S - standardna</option><option value="Z">Z - nulta stopa</option><option value="E">E - oslobođeno</option><option value="AE">AE - obrnuto zaduženje</option><option value="O">O - van PDV</option></select></label><label class="span-2">Opis <span class="optional">(opciono)</span><input name="line_description" maxlength="1000"></label></div>`;
+  row.querySelector(".remove-line").onclick = () => { if ($$(".document-line").length > 1) row.remove(); };
+  $("#document-lines").append(row); toggleDocumentType();
+}
+
+function toggleDocumentType() {
+  const provider = $("#document-form [name=provider]").value; const invoice = provider === "sef";
+  $("#invoice-fields").hidden = !invoice; $("#invoice-fields").disabled = !invoice;
+  $("#despatch-fields").hidden = invoice; $("#despatch-fields").disabled = invoice;
+  $$(".invoice-line-field").forEach(field => {
+    field.hidden = !invoice;
+    field.querySelectorAll("input,select").forEach(control => { control.disabled = !invoice; });
+  });
+  ["shipment_id", "planned_despatch_at", "planned_delivery_at", "despatch_street", "despatch_city", "despatch_postal_code", "despatch_country_code", "delivery_street", "delivery_city", "delivery_postal_code", "delivery_country_code"].forEach(name => { $("#document-form").elements[name].required = !invoice; });
+}
+
+function documentLines(provider) {
+  return $$(".document-line").map(row => {
+    const value = name => row.querySelector(`[name=${name}]`).value.trim();
+    const line = {name:value("line_name"), description:value("line_description") || null, seller_item_id:value("line_sku") || null, gtin:value("line_gtin") || null, quantity:Number(value("line_quantity")), unit_code:value("line_unit")};
+    if (provider === "sef") { line.unit_price = Number(value("line_price")); line.vat_rate = Number(value("line_vat_rate")); line.vat_category = value("line_vat_category"); }
+    return line;
+  });
+}
+
+function resetDocumentForm() {
+  const form = $("#document-form"); form.reset(); documentLineSequence = 0; $("#document-lines").innerHTML = ""; addDocumentLine();
+  const today = new Date().toISOString().slice(0, 10); form.elements.issue_date.value = today; form.elements.delivery_date.value = today;
+  const due = new Date(); due.setDate(due.getDate() + 15); form.elements.due_date.value = due.toISOString().slice(0, 10); toggleDocumentType();
+}
+
 $("#document-form").addEventListener("submit", async event => {
-  event.preventDefault(); const form = event.currentTarget; const formData = new FormData(form); const file = formData.get("xml_file");
-  const issueDate = formData.get("issue_date"); const payload = {provider:formData.get("provider"), direction:formData.get("direction"), document_type:formData.get("document_type"), document_number:formData.get("document_number") || null, idempotency_key:`ui-${Date.now()}-${crypto.randomUUID()}`, issue_date:issueDate ? new Date(`${issueDate}T00:00:00`).toISOString() : null, counterparty_name:formData.get("counterparty_name") || null, counterparty_tax_id:formData.get("counterparty_tax_id") || null, currency:formData.get("currency") || null, total_amount:formData.get("total_amount") || null, payload:{source:"web_ui"}};
-  try {
-    const doc = await api("/api/v1/documents", {method:"POST", body:JSON.stringify(payload)});
-    if (file && file.size) { const upload = new FormData(); upload.append("kind", "source_xml"); upload.append("file", file); await api(`/api/v1/documents/${doc.id}/artifacts`, {method:"POST", body:upload}); if (formData.get("queue_after_upload") && payload.direction === "outbound") await api(`/api/v1/documents/${doc.id}/queue`, {method:"POST"}); }
-    $("#document-dialog").close(); form.reset(); form.elements.currency.value = "RSD"; form.elements.document_type.value = "sales_invoice"; showToast("Dokument je sačuvan."); await loadDocuments(); await loadJobs();
-  } catch (error) { $("#document-error").textContent = error.message; }
+  event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form)); const provider = data.provider;
+  const customer = {name:data.customer_name, tax_id:data.customer_tax_id, registration_number:data.customer_registration_number || null, email:data.customer_email || null, jbkjs:data.customer_jbkjs || null, address:{street:data.customer_street, city:data.customer_city, postal_code:data.customer_postal_code, country_code:data.customer_country_code.toUpperCase()}};
+  const payload = {provider, document_number:data.document_number, issue_date:data.issue_date, note:data.note || null, customer, lines:documentLines(provider), queue_after_create:Boolean(data.queue_after_create)};
+  if (provider === "sef") Object.assign(payload, {delivery_date:data.delivery_date, due_date:data.due_date, currency:data.currency, payment_account:data.payment_account || null, payment_reference:data.payment_reference || null});
+  else Object.assign(payload, {despatch_type:data.despatch_type, shipment_id:data.shipment_id, shipment_method:data.shipment_method, order_reference:data.order_reference || null, planned_despatch_at:new Date(data.planned_despatch_at).toISOString(), planned_delivery_at:new Date(data.planned_delivery_at).toISOString(), despatch_address:{street:data.despatch_street, city:data.despatch_city, postal_code:data.despatch_postal_code, country_code:data.despatch_country_code.toUpperCase()}, delivery_address:{street:data.delivery_street, city:data.delivery_city, postal_code:data.delivery_postal_code, country_code:data.delivery_country_code.toUpperCase()}, gross_weight:data.gross_weight ? Number(data.gross_weight) : null, package_count:data.package_count ? Number(data.package_count) : null, carrier_name:data.carrier_name || null, carrier_tax_id:data.carrier_tax_id || null, vehicle_plate:data.vehicle_plate || null, driver_name:data.driver_name || null, driver_email:data.driver_email || null});
+  try { await api("/api/v1/documents/from-form", {method:"POST", body:JSON.stringify(payload)}); $("#document-dialog").close(); showToast(data.queue_after_create ? "Dokument je generisan i dodat u red." : "Dokument i UBL XML su sačuvani."); await loadDocuments(); await loadJobs(); } catch (error) { $("#document-error").textContent = error.message; }
 });
 
 $("#invite-form").addEventListener("submit", async event => {
@@ -314,8 +369,13 @@ $("#accept-invitation-form").addEventListener("submit", async event => {
   } catch (error) { $("#accept-invitation-error").textContent = error.message; }
 });
 
-$("#document-form [name=provider]").addEventListener("change", event => { $("#document-form [name=document_type]").value = event.target.value === "sef" ? "sales_invoice" : "despatch_advice"; });
-$("#new-document-button").onclick = () => { $("#document-error").textContent = ""; $("#document-dialog").showModal(); };
+$("#document-form [name=provider]").addEventListener("change", toggleDocumentType);
+$("#add-document-line").onclick = addDocumentLine;
+$("#new-document-button").onclick = () => {
+  const requiredProfile = ["street", "city", "postal_code", "country_code", "email"];
+  if (requiredProfile.some(field => !state.organization?.profile?.[field])) { showView("settings"); showToast("Prvo sačuvajte poslovne podatke izabrane firme.", true); return; }
+  $("#document-error").textContent = ""; resetDocumentForm(); $("#document-dialog").showModal();
+};
 $("#new-organization-button").onclick = () => { $("#organization-error").textContent = ""; $("#organization-dialog").showModal(); };
 $("#invite-button").onclick = () => {
   const form = $("#invite-form");

@@ -4,6 +4,10 @@
   font-weight: 500;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 .text-button {
   margin-top: 10px;
   border: 0;
@@ -32,6 +36,84 @@
   margin: -3px 0 2px;
   color: var(--muted);
   font-size: 12px;
+}
+
+textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #cfd7de;
+  border-radius: 9px;
+  padding: 10px 11px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+}
+
+textarea:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px #08756618;
+}
+
+.profile-panel {
+  max-width: 900px;
+  padding: 22px;
+}
+
+.profile-panel h2,
+.section-heading {
+  margin: 0 0 16px;
+  font-size: 20px;
+}
+
+.section-heading {
+  margin-top: 30px;
+}
+
+#document-dialog {
+  width: min(980px, calc(100vw - 30px));
+}
+
+#document-form {
+  max-height: min(920px, calc(100vh - 30px));
+  overflow: auto;
+}
+
+.document-section {
+  margin: 20px 0 0;
+  padding: 17px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.document-section legend {
+  padding: 0 7px;
+  color: var(--green-dark);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+#document-lines {
+  display: grid;
+  gap: 13px;
+  margin-bottom: 13px;
+}
+
+.document-line {
+  padding: 14px;
+  border-radius: 10px;
+  background: #f6f8f9;
+}
+
+.line-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 11px;
+}
+
+.line-heading .icon-button {
+  font-size: 22px;
 }
 
 .integration-actions {

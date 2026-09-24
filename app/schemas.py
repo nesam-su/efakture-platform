@@ -1,8 +1,9 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, model_validator
 
 from app.integrations.environments import IntegrationEnvironment
 from app.models import Direction, DocumentStatus, JobStatus, Provider, Role
@@ -75,6 +76,7 @@ class OrganizationOut(BaseModel):
     name: str
     tax_id: str
     registration_number: str | None
+    profile: dict = Field(default_factory=dict)
     role: Role | None = None
 
 
@@ -82,6 +84,17 @@ class OrganizationCreate(BaseModel):
     name: str = Field(min_length=2, max_length=200)
     tax_id: str = Field(min_length=8, max_length=20)
     registration_number: str | None = Field(default=None, max_length=30)
+
+
+class OrganizationProfileUpdate(BaseModel):
+    street: str = Field(min_length=2, max_length=300)
+    city: str = Field(min_length=2, max_length=120)
+    postal_code: str = Field(min_length=2, max_length=20)
+    country_code: str = Field(default="RS", min_length=2, max_length=2)
+    email: EmailStr
+    bank_account: str | None = Field(default=None, max_length=80)
+    phone: str | None = Field(default=None, max_length=50)
+    jbkjs: str | None = Field(default=None, max_length=30)
 
 
 class MembershipOut(BaseModel):
@@ -148,6 +161,96 @@ class DocumentCreate(BaseModel):
     currency: str | None = Field(default=None, min_length=3, max_length=3)
     total_amount: Decimal | None = None
     payload: dict = Field(default_factory=dict)
+
+
+class AddressInput(BaseModel):
+    street: str = Field(min_length=2, max_length=300)
+    city: str = Field(min_length=2, max_length=120)
+    postal_code: str = Field(min_length=2, max_length=20)
+    country_code: str = Field(default="RS", min_length=2, max_length=2)
+
+
+class PartyInput(BaseModel):
+    name: str = Field(min_length=2, max_length=300)
+    tax_id: str = Field(min_length=8, max_length=20)
+    registration_number: str | None = Field(default=None, max_length=30)
+    email: EmailStr | None = None
+    jbkjs: str | None = Field(default=None, max_length=30)
+    address: AddressInput
+
+
+class DocumentLineInput(BaseModel):
+    name: str = Field(min_length=1, max_length=300)
+    description: str | None = Field(default=None, max_length=1000)
+    seller_item_id: str | None = Field(default=None, max_length=100)
+    gtin: str | None = Field(default=None, max_length=30)
+    quantity: Decimal = Field(gt=0, max_digits=20, decimal_places=6)
+    unit_code: str = Field(default="H87", min_length=2, max_length=3)
+    unit_price: Decimal | None = Field(default=None, ge=0, max_digits=20, decimal_places=6)
+    vat_rate: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=2)
+    vat_category: str = Field(default="S", min_length=1, max_length=4)
+    exemption_reason_code: str | None = Field(default=None, max_length=50)
+
+
+class InvoiceFormCreate(BaseModel):
+    provider: Literal["sef"]
+    document_number: str = Field(min_length=1, max_length=100)
+    issue_date: date
+    due_date: date
+    delivery_date: date
+    currency: str = Field(default="RSD", min_length=3, max_length=3)
+    customer: PartyInput
+    payment_account: str | None = Field(default=None, max_length=80)
+    payment_reference: str | None = Field(default=None, max_length=100)
+    note: str | None = Field(default=None, max_length=2000)
+    lines: list[DocumentLineInput] = Field(min_length=1, max_length=500)
+    queue_after_create: bool = False
+
+    @model_validator(mode="after")
+    def validate_invoice(self):
+        if self.due_date < self.issue_date:
+            raise ValueError("Datum dospeća ne može biti pre datuma izdavanja")
+        if any(line.unit_price is None or line.vat_rate is None for line in self.lines):
+            raise ValueError("Cena i PDV stopa su obavezni za svaku stavku fakture")
+        return self
+
+
+class DespatchFormCreate(BaseModel):
+    provider: Literal["eotpremnice"]
+    document_number: str = Field(min_length=1, max_length=100)
+    issue_date: date
+    despatch_type: Literal["Ext", "Int"] = "Ext"
+    order_reference: str | None = Field(default=None, max_length=100)
+    note: str | None = Field(default=None, max_length=2000)
+    customer: PartyInput
+    shipment_id: str = Field(min_length=1, max_length=100)
+    shipment_method: Literal["1", "2", "3", "4", "5"]
+    planned_despatch_at: datetime
+    planned_delivery_at: datetime
+    despatch_address: AddressInput
+    delivery_address: AddressInput
+    gross_weight: Decimal | None = Field(default=None, gt=0, decimal_places=3)
+    package_count: int | None = Field(default=None, gt=0)
+    carrier_name: str | None = Field(default=None, max_length=300)
+    carrier_tax_id: str | None = Field(default=None, max_length=20)
+    vehicle_plate: str | None = Field(default=None, max_length=30)
+    driver_name: str | None = Field(default=None, max_length=200)
+    driver_email: EmailStr | None = None
+    lines: list[DocumentLineInput] = Field(min_length=1, max_length=500)
+    queue_after_create: bool = False
+
+    @model_validator(mode="after")
+    def validate_despatch(self):
+        if self.planned_delivery_at < self.planned_despatch_at:
+            raise ValueError("Planirani prijem ne može biti pre planirane otpreme")
+        if bool(self.carrier_name) != bool(self.carrier_tax_id):
+            raise ValueError("Naziv i PIB prevoznika unose se zajedno")
+        if self.driver_name and not self.driver_email:
+            raise ValueError("Email vozača je obavezan kada je uneto ime vozača")
+        return self
+
+
+DocumentFormCreate = InvoiceFormCreate | DespatchFormCreate
 
 
 class DocumentOut(DocumentCreate):

@@ -27,7 +27,10 @@ Integracioni sloj je mapiran prema lokalnoj dokumentaciji od 31. jula i 21. avgu
 - paginirana eOtpremnice sinhronizacija zahteva i supplier/customer/carrier tokova;
 - idempotentni dnevnik spoljnih događaja i automatsko preuzimanje XML-a novog dokumenta.
 - responsive radni panel za dokumente, poslove, događaje, korisnike i integracije;
-- kreiranje dokumenta, XML upload, slanje u red i preuzimanje priloga bez Swagger-a.
+- poslovne forme za izlaznu fakturu i eksternu/internu eOtpremnicu, bez ručnog XML-a;
+- ponovljive stavke, partner, adrese, poreski i transportni podaci u web interfejsu;
+- automatsko generisanje i čuvanje UBL XML-a uz dokument, sa izborom nacrta ili slanja u red;
+- ručni XML/PDF upload i preuzimanje priloga bez Swagger-a za napredne i uvozne tokove.
 - JWT vezan za opozivu serversku sesiju, pregled uređaja i bezbedna odjava;
 - distribuirana PostgreSQL zaštita prijave i sigurnosna HTTP/CSP zaglavlja.
 - jednokratni reset lozinke preko email linka, uz opoziv svih postojećih sesija;
@@ -94,7 +97,8 @@ API adrese se biraju na serveru iz fiksne liste zvaničnih Demo/Produkcija adres
 
 1. Prebaciti storage adapter na Hetzner Object Storage sa enkripcijom i retention pravilima.
 2. Dodati obradu eOtpremnice `ApplicationResponse` XML događaja i njihovo vezivanje za izvorni dokument.
-3. Implementirati generatore UBL dokumenata kao tipizirane forme, uz obaveznu proveru kroz državne XML validatore.
+3. Proširiti tipizirane forme na avansne i konačne fakture, knjižna odobrenja/zaduženja,
+   obračun PDV-a i opasnu robu, uz proveru kroz državne XML validatore.
 4. Dodati administrativni tok za bezbedan reset MFA i obavezno ponovno potvrđivanje identiteta za osetljive promene.
 5. Dodati PostgreSQL RLS kao drugi sloj tenant izolacije.
 6. Tek uz zasebne sandbox ključeve izvršiti end-to-end testove prema demo okruženjima.
@@ -107,7 +111,23 @@ API adrese se biraju na serveru iz fiksne liste zvaničnih Demo/Produkcija adres
 4. Primalac otvara link i prihvata poziv u web interfejsu. Novi korisnik navodi ime i novu lozinku, a postojeći potvrđuje svoju lozinku.
 5. Token se u bazi čuva samo kao SHA-256 otisak, ima rok trajanja i ne može se ponovo upotrebiti.
 
-## Tok slanja dokumenta
+## Unos fakture ili otpremnice bez XML-a
+
+1. U delu `Podešavanja` jednom unesite poslovnu adresu i email izabrane firme.
+2. Na početnoj strani izaberite `Novi dokument`, a zatim SEF fakturu ili eOtpremnicu.
+3. Unesite kupca/primaoca, datume i jednu ili više stavki. Za otpremnicu se dodatno
+   unose mesto otpreme/isporuke i podaci o transportu.
+4. Dugme `Generiši dokument` pravi UBL XML i čuva ga kao prilog nacrta. Opcija
+   `Pošalji u red odmah nakon kreiranja` koristi prethodno sačuvan ključ izabrane firme.
+
+Ključevi se ne unose uz svaki dokument. Šifrovano se čuvaju po firmi i okruženju,
+a menjaju se samo kada korisnik želi da zameni ključ ili pređe sa Demo na Produkciju.
+
+Trenutna forma pokriva standardnu izlaznu fakturu i standardnu eksternu/internu
+otpremnicu. Napredni poreski scenariji biće dodavani kao posebni tipovi dokumenata,
+da se obavezna polja ne mešaju sa uobičajenim unosom.
+
+## Ručni tok slanja dokumenta
 
 1. Kreirati dokument preko `POST /api/v1/documents`.
 2. Dodati XML kao `multipart/form-data` preko `POST /api/v1/documents/{id}/artifacts`, sa poljem `kind=source_xml` i poljem `file`.
