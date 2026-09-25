@@ -1,6 +1,6 @@
 const tokenKey = "edokumenti_access_token";
 const organizationKey = "edokumenti_organization_id";
-const state = {organizations: [], organization: null, documents: [], jobs: [], events: [], members: [], sessions: [], integrations: []};
+const state = {organizations: [], organization: null, documents: [], customers: [], items: [], jobs: [], events: [], members: [], sessions: [], integrations: []};
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -24,6 +24,8 @@ function formatAmount(value, currency = "RSD") {
 const statusNames = {draft:"Nacrt",queued:"Na čekanju",sent:"Poslato",delivered:"Isporučeno",accepted:"Prihvaćeno",rejected:"Odbijeno",cancelled:"Stornirano",error:"Greška",running:"U toku",retrying:"Ponovni pokušaj",succeeded:"Uspešno",failed:"Neuspešno"};
 const roleNames = {owner:"Vlasnik",admin:"Administrator",accountant:"Knjigovođa",operator:"Operater",viewer:"Pregled"};
 const documentTypeNames = {sales_invoice:"Izlazna faktura",purchase_invoice:"Ulazna faktura",despatch_advice:"Otpremnica",receipt_advice:"Prijemnica"};
+const unitNames = {H87:"Komad",KGM:"Kilogram",LTR:"Litar",MTR:"Metar",MTK:"m²",MTQ:"m³",HUR:"Sat",DAY:"Dan",XPK:"Paket"};
+const vatNames = {"20:S":"20%","10:S":"10%","0:Z":"0%","0:O":"Nije u PDV sistemu","0:E":"Oslobođeno PDV-a"};
 
 function showToast(message, error = false) {
   const toast = $("#toast");
@@ -84,6 +86,8 @@ async function initializeApp() {
     $("#auth-view").hidden = true;
     $("#app-view").hidden = false;
     $("#new-document-button").hidden = !canEdit();
+    $("#new-customer-button").hidden = !canEdit();
+    $("#new-item-button").hidden = !canEdit();
     $("#invite-button").hidden = !canAdminister();
     await loadWorkspace();
   } catch (error) {
@@ -93,7 +97,7 @@ async function initializeApp() {
 
 async function loadWorkspace() {
   renderOrganizationProfile();
-  const loaders = [loadDocuments(), loadJobs(), loadEvents(), loadMembers(), loadSessions(), loadIntegrations()];
+  const loaders = [loadDocuments(), loadCustomers(), loadCatalogItems(), loadJobs(), loadEvents(), loadMembers(), loadSessions(), loadIntegrations()];
   const results = await Promise.allSettled(loaders);
   const failed = results.find(result => result.status === "rejected");
   if (failed) showToast(failed.reason.message, true);
@@ -134,6 +138,64 @@ function renderDocuments() {
   $("#metric-success").textContent = state.documents.filter(doc => ["delivered", "accepted"].includes(doc.status)).length;
   $("#metric-errors").textContent = state.documents.filter(doc => ["rejected", "error"].includes(doc.status)).length;
   $$("[data-document-id]").forEach(button => button.addEventListener("click", () => showDocument(button.dataset.documentId)));
+}
+
+async function loadCustomers() {
+  state.customers = await api("/api/v1/customers");
+  renderCustomers();
+  populateCustomerSelector();
+}
+
+function renderCustomers() {
+  const search = $("#customer-search").value.trim().toLowerCase();
+  const customers = state.customers.filter(customer => `${customer.name} ${customer.tax_id} ${customer.city}`.toLowerCase().includes(search));
+  $("#customer-rows").innerHTML = customers.map(customer => `<tr><td><strong>${escapeHtml(customer.name)}</strong><small>${escapeHtml(customer.street)}</small></td><td>${escapeHtml(customer.tax_id)}<small>${escapeHtml(customer.registration_number || "")}</small></td><td><strong>${escapeHtml(customer.city)}</strong><small>${escapeHtml(customer.postal_code)}</small></td><td>${escapeHtml(customer.email || "—")}<small>${escapeHtml(customer.phone || "")}</small></td><td>${canEdit() ? `<button class="row-action edit-customer" data-id="${customer.id}">Izmeni</button>` : ""}</td></tr>`).join("");
+  $("#customers-empty").hidden = customers.length > 0;
+  $$(".edit-customer").forEach(button => button.onclick = () => openCustomerDialog(state.customers.find(customer => customer.id === button.dataset.id)));
+}
+
+function populateCustomerSelector() {
+  const select = $("#document-customer-select");
+  const selected = select.value;
+  select.innerHTML = '<option value="">Ručni unos / novi kupac</option>' + state.customers.map(customer => `<option value="${customer.id}">${escapeHtml(customer.name)} · ${escapeHtml(customer.tax_id)}</option>`).join("");
+  if (state.customers.some(customer => customer.id === selected)) select.value = selected;
+}
+
+function fillCustomer(customer) {
+  if (!customer) return;
+  const form = $("#document-form");
+  const values = {customer_name:customer.name,customer_tax_id:customer.tax_id,customer_registration_number:customer.registration_number,customer_street:customer.street,customer_city:customer.city,customer_postal_code:customer.postal_code,customer_country_code:customer.country_code,customer_email:customer.email,customer_jbkjs:customer.jbkjs};
+  Object.entries(values).forEach(([name, value]) => { form.elements[name].value = value || ""; });
+}
+
+function openCustomerDialog(customer = null) {
+  const form = $("#customer-form"); form.reset(); form.elements.country_code.value = "RS";
+  $("#customer-dialog-title").textContent = customer ? "Izmena kupca" : "Novi kupac";
+  if (customer) Object.keys(customer).forEach(name => { if (form.elements[name]) form.elements[name].value = customer[name] ?? ""; });
+  $("#customer-error").textContent = ""; $("#customer-dialog").showModal();
+}
+
+async function loadCatalogItems() {
+  state.items = await api("/api/v1/catalog-items");
+  renderCatalogItems();
+}
+
+function renderCatalogItems() {
+  const search = $("#item-search").value.trim().toLowerCase();
+  const items = state.items.filter(item => `${item.name} ${item.sku} ${item.gtin || ""}`.toLowerCase().includes(search));
+  $("#item-rows").innerHTML = items.map(item => `<tr><td><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.description || "")}</small></td><td>${escapeHtml(item.sku)}<small>${escapeHtml(item.gtin || "")}</small></td><td>${escapeHtml(unitNames[item.unit_code] || item.unit_code)}</td><td>${formatAmount(item.unit_price)}</td><td>${escapeHtml(vatNames[`${Number(item.vat_rate)}:${item.vat_category}`] || `${item.vat_rate}%`)}</td><td>${canEdit() ? `<button class="row-action edit-item" data-id="${item.id}">Izmeni</button>` : ""}</td></tr>`).join("");
+  $("#items-empty").hidden = items.length > 0;
+  $$(".edit-item").forEach(button => button.onclick = () => openItemDialog(state.items.find(item => item.id === button.dataset.id)));
+}
+
+function openItemDialog(item = null) {
+  const form = $("#item-form"); form.reset();
+  $("#item-dialog-title").textContent = item ? "Izmena artikla ili usluge" : "Novi artikal ili usluga";
+  if (item) {
+    Object.keys(item).forEach(name => { if (form.elements[name]) form.elements[name].value = item[name] ?? ""; });
+    form.elements.vat_choice.value = `${Number(item.vat_rate)}:${item.vat_category}`;
+  }
+  $("#item-error").textContent = ""; $("#item-dialog").showModal();
 }
 
 async function showDocument(documentId) {
@@ -283,7 +345,7 @@ $("#mfa-confirm-form").addEventListener("submit", async event => {
 
 $("#organization-select").addEventListener("change", async event => {
   state.organization = state.organizations.find(item => item.id === event.target.value); sessionStorage.setItem(organizationKey, state.organization.id);
-  $("#new-document-button").hidden = !canEdit(); $("#invite-button").hidden = !canAdminister(); await loadWorkspace();
+  $("#new-document-button").hidden = !canEdit(); $("#new-customer-button").hidden = !canEdit(); $("#new-item-button").hidden = !canEdit(); $("#invite-button").hidden = !canAdminister(); await loadWorkspace();
 });
 
 $("#organization-form").addEventListener("submit", async event => {
@@ -314,8 +376,15 @@ let documentLineSequence = 0;
 function addDocumentLine() {
   documentLineSequence += 1;
   const row = document.createElement("div"); row.className = "document-line";
-  row.innerHTML = `<div class="line-heading"><strong>Stavka ${documentLineSequence}</strong><button type="button" class="icon-button remove-line" aria-label="Ukloni stavku">×</button></div><div class="form-grid"><label class="span-2">Naziv<input name="line_name" required maxlength="300"></label><label>Šifra artikla<input name="line_sku" maxlength="100"></label><label>GTIN<input name="line_gtin" maxlength="30"></label><label>Količina<input name="line_quantity" type="number" min="0.000001" step="0.000001" value="1" required></label><label>Jedinica mere<input name="line_unit" value="H87" minlength="2" maxlength="3" required></label><label class="invoice-line-field">Cena bez PDV<input name="line_price" type="number" min="0" step="0.01" required></label><label class="invoice-line-field">PDV stopa %<input name="line_vat_rate" type="number" min="0" max="100" step="0.01" value="20" required></label><label class="invoice-line-field">PDV kategorija<select name="line_vat_category"><option value="S">S - standardna</option><option value="Z">Z - nulta stopa</option><option value="E">E - oslobođeno</option><option value="AE">AE - obrnuto zaduženje</option><option value="O">O - van PDV</option></select></label><label class="span-2">Opis <span class="optional">(opciono)</span><input name="line_description" maxlength="1000"></label></div>`;
+  const itemOptions = state.items.map(item => `<option value="${item.id}">${escapeHtml(item.name)} · ${escapeHtml(item.sku)}</option>`).join("");
+  row.innerHTML = `<div class="line-heading"><strong>Stavka ${documentLineSequence}</strong><button type="button" class="icon-button remove-line" aria-label="Ukloni stavku">×</button></div><div class="form-grid"><label class="span-2">Izaberite artikal ili uslugu<select class="line-item-picker"><option value="">Ručni unos</option>${itemOptions}</select></label><label class="span-2">Naziv<input name="line_name" required maxlength="300"></label><label>Šifra artikla<input name="line_sku" maxlength="100"></label><label>GTIN<input name="line_gtin" maxlength="30"></label><label>Količina<input name="line_quantity" type="number" min="0.000001" step="0.000001" value="1" required></label><label>Jedinica mere<select name="line_unit" required><option value="H87">Komad</option><option value="KGM">Kilogram</option><option value="LTR">Litar</option><option value="MTR">Metar</option><option value="MTK">m²</option><option value="MTQ">m³</option><option value="HUR">Sat</option><option value="DAY">Dan</option><option value="XPK">Paket</option></select></label><label class="invoice-line-field">Cena bez PDV<input name="line_price" type="number" min="0" step="0.01" required></label><label class="invoice-line-field">PDV<select name="line_vat_choice"><option value="20:S">20%</option><option value="10:S">10%</option><option value="0:Z">0%</option><option value="0:O">Nije u PDV sistemu</option><option value="0:E">Oslobođeno PDV-a</option></select></label><label class="span-2">Opis <span class="optional">(opciono)</span><input name="line_description" maxlength="1000"></label></div>`;
   row.querySelector(".remove-line").onclick = () => { if ($$(".document-line").length > 1) row.remove(); };
+  row.querySelector(".line-item-picker").onchange = event => {
+    const item = state.items.find(candidate => candidate.id === event.target.value);
+    if (!item) return;
+    const values = {line_name:item.name,line_sku:item.sku,line_gtin:item.gtin,line_quantity:"1",line_unit:item.unit_code,line_price:item.unit_price,line_vat_choice:`${Number(item.vat_rate)}:${item.vat_category}`,line_description:item.description};
+    Object.entries(values).forEach(([name, value]) => { const control = row.querySelector(`[name=${name}]`); if (control) control.value = value ?? ""; });
+  };
   $("#document-lines").append(row); toggleDocumentType();
 }
 
@@ -334,7 +403,7 @@ function documentLines(provider) {
   return $$(".document-line").map(row => {
     const value = name => row.querySelector(`[name=${name}]`).value.trim();
     const line = {name:value("line_name"), description:value("line_description") || null, seller_item_id:value("line_sku") || null, gtin:value("line_gtin") || null, quantity:Number(value("line_quantity")), unit_code:value("line_unit")};
-    if (provider === "sef") { line.unit_price = Number(value("line_price")); line.vat_rate = Number(value("line_vat_rate")); line.vat_category = value("line_vat_category"); }
+    if (provider === "sef") { const [rate, category] = value("line_vat_choice").split(":"); line.unit_price = Number(value("line_price")); line.vat_rate = Number(rate); line.vat_category = category; }
     return line;
   });
 }
@@ -352,6 +421,29 @@ $("#document-form").addEventListener("submit", async event => {
   if (provider === "sef") Object.assign(payload, {delivery_date:data.delivery_date, due_date:data.due_date, currency:data.currency, payment_account:data.payment_account || null, payment_reference:data.payment_reference || null});
   else Object.assign(payload, {despatch_type:data.despatch_type, shipment_id:data.shipment_id, shipment_method:data.shipment_method, order_reference:data.order_reference || null, planned_despatch_at:new Date(data.planned_despatch_at).toISOString(), actual_despatch_at:new Date(data.actual_despatch_at).toISOString(), planned_delivery_at:new Date(data.planned_delivery_at).toISOString(), despatch_address:{street:data.despatch_street, city:data.despatch_city, postal_code:data.despatch_postal_code, country_code:data.despatch_country_code.toUpperCase()}, delivery_address:{street:data.delivery_street, city:data.delivery_city, postal_code:data.delivery_postal_code, country_code:data.delivery_country_code.toUpperCase()}, gross_weight:data.gross_weight ? Number(data.gross_weight) : null, package_count:data.package_count ? Number(data.package_count) : null, carrier_name:data.carrier_name || null, carrier_tax_id:data.carrier_tax_id || null, carrier_registration_number:data.carrier_registration_number || null, vehicle_plate:data.vehicle_plate || null, driver_name:data.driver_name || null, driver_email:data.driver_email || null});
   try { await api("/api/v1/documents/from-form", {method:"POST", body:JSON.stringify(payload)}); $("#document-dialog").close(); showToast(data.queue_after_create ? "Dokument je generisan i dodat u red." : "Dokument i UBL XML su sačuvani."); await loadDocuments(); await loadJobs(); } catch (error) { $("#document-error").textContent = error.message; }
+});
+
+$("#customer-form").addEventListener("submit", async event => {
+  event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form)); const id = data.id; delete data.id;
+  ["registration_number", "email", "phone", "jbkjs", "notes"].forEach(name => { if (!data[name]) data[name] = null; });
+  data.country_code = data.country_code.toUpperCase();
+  try {
+    const customer = await api(id ? `/api/v1/customers/${id}` : "/api/v1/customers", {method:id ? "PUT" : "POST", body:JSON.stringify(data)});
+    $("#customer-dialog").close(); await loadCustomers();
+    if ($("#document-dialog").open) { $("#document-customer-select").value = customer.id; fillCustomer(customer); }
+    showToast(id ? "Podaci kupca su izmenjeni." : "Kupac je sačuvan u imenik.");
+  } catch (error) { $("#customer-error").textContent = error.message; }
+});
+
+$("#item-form").addEventListener("submit", async event => {
+  event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form)); const id = data.id; delete data.id;
+  const [vatRate, vatCategory] = data.vat_choice.split(":"); delete data.vat_choice;
+  data.vat_rate = Number(vatRate); data.vat_category = vatCategory; data.unit_price = Number(data.unit_price);
+  ["gtin", "description"].forEach(name => { if (!data[name]) data[name] = null; });
+  try {
+    await api(id ? `/api/v1/catalog-items/${id}` : "/api/v1/catalog-items", {method:id ? "PUT" : "POST", body:JSON.stringify(data)});
+    $("#item-dialog").close(); await loadCatalogItems(); showToast(id ? "Artikal je izmenjen." : "Artikal je sačuvan u šifarnik.");
+  } catch (error) { $("#item-error").textContent = error.message; }
 });
 
 $("#invite-form").addEventListener("submit", async event => {
@@ -376,7 +468,11 @@ $("#accept-invitation-form").addEventListener("submit", async event => {
 });
 
 $("#document-form [name=provider]").addEventListener("change", toggleDocumentType);
+$("#document-customer-select").addEventListener("change", event => fillCustomer(state.customers.find(customer => customer.id === event.target.value)));
 $("#add-document-line").onclick = addDocumentLine;
+$("#new-customer-button").onclick = () => openCustomerDialog();
+$("#document-new-customer").onclick = () => openCustomerDialog();
+$("#new-item-button").onclick = () => openItemDialog();
 $("#new-document-button").onclick = () => {
   const requiredProfile = ["street", "city", "postal_code", "country_code", "email"];
   const validTaxId = /^(?:\d{9}|\d{13})$/.test(state.organization?.tax_id || "");
@@ -396,6 +492,8 @@ $("#menu-button").onclick = () => $(".sidebar").classList.toggle("open");
 $$('.close-dialog').forEach(button => button.onclick = () => button.closest("dialog").close());
 $$('.nav-item[data-view]').forEach(button => button.onclick = () => showView(button.dataset.view));
 [$("#document-search"), $("#provider-filter"), $("#status-filter")].forEach(control => control.addEventListener("input", renderDocuments));
+$("#customer-search").addEventListener("input", renderCustomers);
+$("#item-search").addEventListener("input", renderCatalogItems);
 
 const resetToken = new URLSearchParams(location.search).get("reset_token");
 if (resetToken) {

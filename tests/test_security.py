@@ -86,6 +86,10 @@ def test_public_pages(monkeypatch):
     assert response.status_code == 200
     assert "eDokumenti" in response.text
     assert 'id="document-dialog"' in response.text
+    assert 'id="view-customers"' in response.text
+    assert 'id="view-catalog"' in response.text
+    assert 'id="customer-dialog"' in response.text
+    assert 'id="item-dialog"' in response.text
     assert 'id="organization-select"' in response.text
     assert 'id="organization-dialog"' in response.text
     assert 'id="accept-invitation-dialog"' in response.text

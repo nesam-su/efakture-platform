@@ -179,6 +179,53 @@ class Organization(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class Customer(Base, TimestampMixin):
+    __tablename__ = "customers"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "tax_id"),
+        Index("ix_customer_org_name", "organization_id", "name"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(300))
+    tax_id: Mapped[str] = mapped_column(String(20))
+    registration_number: Mapped[str | None] = mapped_column(String(30))
+    street: Mapped[str] = mapped_column(String(300))
+    city: Mapped[str] = mapped_column(String(120))
+    postal_code: Mapped[str] = mapped_column(String(20))
+    country_code: Mapped[str] = mapped_column(String(2), default="RS")
+    email: Mapped[str | None] = mapped_column(String(320))
+    phone: Mapped[str | None] = mapped_column(String(50))
+    jbkjs: Mapped[str | None] = mapped_column(String(30))
+    notes: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class CatalogItem(Base, TimestampMixin):
+    __tablename__ = "catalog_items"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "sku"),
+        Index("ix_catalog_item_org_name", "organization_id", "name"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(300))
+    sku: Mapped[str] = mapped_column(String(100))
+    gtin: Mapped[str | None] = mapped_column(String(30))
+    description: Mapped[str | None] = mapped_column(Text)
+    unit_code: Mapped[str] = mapped_column(String(3), default="H87")
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(20, 6), default=0)
+    vat_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=20)
+    vat_category: Mapped[str] = mapped_column(String(4), default="S")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
 class Membership(Base, TimestampMixin):
     __tablename__ = "memberships"
     __table_args__ = (UniqueConstraint("organization_id", "user_id"),)

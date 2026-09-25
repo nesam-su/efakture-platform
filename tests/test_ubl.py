@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from app.models import Organization
 from app.schemas import (
     AddressInput,
+    CatalogItemInput,
     DespatchFormCreate,
     DocumentLineInput,
     InvoiceFormCreate,
@@ -51,6 +52,19 @@ def test_party_rejects_invalid_serbian_identifier_length():
             tax_id="12345678",
             address=AddressInput(street="Test 1", city="Subotica", postal_code="24000"),
         )
+
+
+def test_catalog_item_accepts_simple_vat_choices():
+    for rate, category in (("20", "S"), ("10", "S"), ("0", "Z"), ("0", "O")):
+        item = CatalogItemInput(
+            name="Test", sku=f"A-{rate}-{category}", vat_rate=rate, vat_category=category
+        )
+        assert item.vat_category == category
+
+
+def test_catalog_item_rejects_invalid_standard_vat_rate():
+    with pytest.raises(ValidationError, match="10% ili 20%"):
+        CatalogItemInput(name="Test", sku="A-1", vat_rate="15", vat_category="S")
 
 
 def test_invoice_form_generates_totals_and_valid_ubl_xml():

@@ -16,10 +16,10 @@
     <div class="auth-brand"><span class="brand-mark">eD</span><strong>eDokumenti</strong></div>
     <div class="auth-layout">
       <div class="auth-copy">
-        <p class="eyebrow">SEF + eOtpremnice</p>
-        <h1>Dokumenti, statusi i firme na jednom mestu.</h1>
-        <p>Bezbedan višekorisnički rad, automatska sinhronizacija i jasna evidencija svake promene.</p>
-        <div class="feature-list"><span>Više firmi</span><span>Kontrola pristupa</span><span>Audit istorija</span></div>
+        <p class="eyebrow">POSLOVANJE BEZ KOMPLIKACIJA</p>
+        <h1>Fakture i otpremnice, brzo i pregledno.</h1>
+        <p>Kupci, artikli i dokumenti na jednom mestu, uz automatsko povezivanje sa državnim servisima u pozadini.</p>
+        <div class="feature-list"><span>Brz unos</span><span>Više korisnika</span><span>Jasan pregled</span></div>
       </div>
       <div class="panel auth-card">
         <p class="eyebrow">DOBRO DOŠLI</p>
@@ -43,10 +43,12 @@
       <div class="brand"><span class="brand-mark">eD</span><strong>eDokumenti</strong></div>
       <nav aria-label="Glavna navigacija">
         <button class="nav-item active" data-view="documents"><span>▦</span>Dokumenti</button>
+        <button class="nav-item" data-view="customers"><span>♧</span>Kupci</button>
+        <button class="nav-item" data-view="catalog"><span>▤</span>Artikli</button>
         <button class="nav-item" data-view="jobs"><span>↻</span>Poslovi</button>
         <button class="nav-item" data-view="events"><span>⌁</span>Događaji</button>
         <button class="nav-item" data-view="members"><span>♙</span>Korisnici</button>
-        <button class="nav-item" data-view="settings"><span>⚙</span>Povezivanje</button>
+        <button class="nav-item" data-view="settings"><span>⚙</span>Podešavanja</button>
       </nav>
       <div class="sidebar-footer">
         <div class="sync-note"><i></i><span>Automatska sinhronizacija</span></div>
@@ -83,6 +85,16 @@
           </div>
         </section>
 
+        <section class="view" id="view-customers">
+          <div class="page-heading"><div><p class="eyebrow">POSLOVNI PARTNERI</p><h1>Kupci</h1><p class="muted">Jednom unesite podatke i zatim birajte kupca u dokumentu.</p></div><button class="primary" id="new-customer-button">+ Novi kupac</button></div>
+          <div class="panel table-panel"><div class="toolbar"><div class="search"><span>⌕</span><input id="customer-search" placeholder="Pretraži naziv ili PIB"></div></div><div class="table-wrap"><table><thead><tr><th>Kupac</th><th>PIB / JMBG</th><th>Mesto</th><th>Kontakt</th><th></th></tr></thead><tbody id="customer-rows"></tbody></table><div class="empty-state" id="customers-empty"><strong>Još nema kupaca</strong><p>Dodajte prvog kupca da biste ubrzali unos dokumenata.</p></div></div></div>
+        </section>
+
+        <section class="view" id="view-catalog">
+          <div class="page-heading"><div><p class="eyebrow">ŠIFARNIK</p><h1>Artikli i usluge</h1><p class="muted">Cena, jedinica mere i PDV automatski se prenose u dokument.</p></div><button class="primary" id="new-item-button">+ Novi artikal</button></div>
+          <div class="panel table-panel"><div class="toolbar"><div class="search"><span>⌕</span><input id="item-search" placeholder="Pretraži naziv, šifru ili GTIN"></div></div><div class="table-wrap"><table><thead><tr><th>Artikal / usluga</th><th>Šifra</th><th>Jedinica</th><th>Cena bez PDV</th><th>PDV</th><th></th></tr></thead><tbody id="item-rows"></tbody></table><div class="empty-state" id="items-empty"><strong>Još nema artikala</strong><p>Dodajte artikle i usluge koje često koristite.</p></div></div></div>
+        </section>
+
         <section class="view" id="view-jobs"><div class="page-heading"><div><p class="eyebrow">OBRADA</p><h1>Poslovi slanja</h1><p class="muted">Pokušaji, ponavljanja i greške asinhronog workera.</p></div></div><div class="panel list-panel" id="jobs-list"></div></section>
         <section class="view" id="view-events"><div class="page-heading"><div><p class="eyebrow">SINHRONIZACIJA</p><h1>Spoljni događaji</h1><p class="muted">Promene preuzete iz SEF-a i sistema eOtpremnica.</p></div></div><div class="panel list-panel" id="events-list"></div></section>
         <section class="view" id="view-members"><div class="page-heading"><div><p class="eyebrow">TIM</p><h1>Korisnici firme</h1><p class="muted">Članovi i njihove uloge u izabranoj firmi.</p></div><button class="primary" id="invite-button">+ Pozovi korisnika</button></div><div class="panel list-panel" id="members-list"></div><h2 class="section-heading">Moje aktivne sesije</h2><div class="panel list-panel" id="sessions-list"></div><h2 class="section-heading">Dvofaktorska prijava</h2><div class="panel security-panel"><p class="muted">Povežite autentifikator koji podržava TOTP. Potvrda prikazuje rezervne kodove samo jednom.</p><form id="mfa-setup-form"><label>Potvrdite lozinku<input name="password" type="password" autocomplete="current-password" required></label><button class="primary" type="submit">Započni podešavanje</button></form><form id="mfa-confirm-form" hidden><div class="token-box" id="mfa-secret"></div><label>Šestocifreni kod<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label><button class="primary" type="submit">Uključi MFA</button></form><div id="mfa-result"></div></div></section>
@@ -91,7 +103,7 @@
     </div>
   </div>
 
-  <dialog id="document-dialog">
+  <dialog id="document-dialog" class="document-workspace">
     <form id="document-form">
       <div class="dialog-heading"><div><p class="eyebrow">NOVI POSLOVNI DOKUMENT</p><h2>Unos bez XML-a</h2></div><button type="button" class="icon-button close-dialog" aria-label="Zatvori">×</button></div>
       <div class="form-grid">
@@ -101,13 +113,31 @@
       </div>
       <fieldset class="document-section" id="invoice-fields"><legend>Podaci fakture</legend><div class="form-grid"><label>Datum prometa<input name="delivery_date" type="date" required></label><label>Datum dospeća<input name="due_date" type="date" required></label><label>Valuta<input name="currency" value="RSD" minlength="3" maxlength="3" required></label><label>Tekući račun <span class="optional">(ako je drugačiji)</span><input name="payment_account" maxlength="80"></label><label class="span-2">Model i poziv na broj<input name="payment_reference" maxlength="100"></label></div></fieldset>
       <fieldset class="document-section" id="despatch-fields" hidden disabled><legend>Transport</legend><div class="form-grid"><label>Tip otpremnice<select name="despatch_type"><option value="Ext">Eksterna</option><option value="Int">Interna</option></select></label><label>Broj pošiljke<input name="shipment_id" maxlength="100"></label><label>Način otpreme<select name="shipment_method"><option value="1">Sopstveni prevoz</option><option value="2">Prevoznik</option><option value="3">Prevoz primaoca</option><option value="4">Lično preuzimanje</option><option value="5">Lična dostava</option></select></label><label>Broj narudžbenice<input name="order_reference" maxlength="100"></label><label>Planirani polazak<input name="planned_despatch_at" type="datetime-local"></label><label>Planirani prijem<input name="planned_delivery_at" type="datetime-local"></label><label>Bruto masa (kg)<input name="gross_weight" type="number" min="0.001" step="0.001"></label><label>Broj paketa<input name="package_count" type="number" min="1" step="1"></label><label>Adresa otpreme<input name="despatch_street" maxlength="300"></label><label>Grad otpreme<input name="despatch_city" maxlength="120"></label><label>Poštanski broj otpreme<input name="despatch_postal_code" maxlength="20"></label><label>Država otpreme<input name="despatch_country_code" value="RS" minlength="2" maxlength="2"></label><label>Adresa isporuke<input name="delivery_street" maxlength="300"></label><label>Grad isporuke<input name="delivery_city" maxlength="120"></label><label>Poštanski broj isporuke<input name="delivery_postal_code" maxlength="20"></label><label>Država isporuke<input name="delivery_country_code" value="RS" minlength="2" maxlength="2"></label><label>Naziv prevoznika<input name="carrier_name" maxlength="300"></label><label>PIB prevoznika<input name="carrier_tax_id" inputmode="numeric" pattern="(?:[0-9]{9}|[0-9]{13})"></label><label>Matični broj prevoznika<input name="carrier_registration_number" maxlength="30"></label><label>Registracija vozila<input name="vehicle_plate" maxlength="30"></label><label>Ime vozača<input name="driver_name" maxlength="200"></label><label class="span-2">Email vozača<input name="driver_email" type="email"></label></div></fieldset>
-      <fieldset class="document-section"><legend>Primalac / kupac</legend><div class="form-grid"><label class="span-2">Naziv<input name="customer_name" required maxlength="300"></label><label>PIB ili JMBG<input name="customer_tax_id" required inputmode="numeric" pattern="(?:[0-9]{9}|[0-9]{13})" title="Unesite tačno 9 cifara PIB-a ili 13 cifara JMBG-a"></label><label>Matični broj<input name="customer_registration_number" maxlength="30"></label><label>Adresa<input name="customer_street" required maxlength="300"></label><label>Grad<input name="customer_city" required maxlength="120"></label><label>Poštanski broj<input name="customer_postal_code" required maxlength="20"></label><label>Država<input name="customer_country_code" value="RS" required minlength="2" maxlength="2"></label><label>Email<input name="customer_email" type="email"></label><label>JBKJS<input name="customer_jbkjs" maxlength="30"></label></div></fieldset>
+      <fieldset class="document-section"><legend>Primalac / kupac</legend><div class="quick-picker"><label>Izaberite sačuvanog kupca<select id="document-customer-select"><option value="">Ručni unos / novi kupac</option></select></label><button type="button" class="secondary" id="document-new-customer">+ Dodaj kupca</button></div><div class="form-grid"><label class="span-2">Naziv<input name="customer_name" required maxlength="300"></label><label>PIB ili JMBG<input name="customer_tax_id" required inputmode="numeric" pattern="(?:[0-9]{9}|[0-9]{13})" title="Unesite tačno 9 cifara PIB-a ili 13 cifara JMBG-a"></label><label>Matični broj<input name="customer_registration_number" maxlength="30"></label><label>Adresa<input name="customer_street" required maxlength="300"></label><label>Grad<input name="customer_city" required maxlength="120"></label><label>Poštanski broj<input name="customer_postal_code" required maxlength="20"></label><label>Država<input name="customer_country_code" value="RS" required minlength="2" maxlength="2"></label><label>Email<input name="customer_email" type="email"></label><label>JBKJS<input name="customer_jbkjs" maxlength="30"></label></div></fieldset>
       <fieldset class="document-section"><legend>Stavke</legend><div id="document-lines"></div><button type="button" class="secondary" id="add-document-line">+ Dodaj stavku</button></fieldset>
       <label>Napomena<textarea name="note" maxlength="2000" rows="3"></textarea></label>
       <label class="check"><input name="queue_after_create" type="checkbox"> Pošalji u red odmah nakon kreiranja</label>
       <p class="muted small">UBL XML se automatski generiše i čuva uz dokument.</p>
       <p class="form-error" id="document-error"></p>
       <div class="dialog-actions"><button type="button" class="secondary close-dialog">Odustani</button><button class="primary" type="submit">Generiši dokument</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="customer-dialog">
+    <form id="customer-form">
+      <input name="id" type="hidden">
+      <div class="dialog-heading"><div><p class="eyebrow">IMENIK KUPACA</p><h2 id="customer-dialog-title">Novi kupac</h2></div><button type="button" class="icon-button close-dialog" aria-label="Zatvori">×</button></div>
+      <div class="form-grid"><label class="span-2">Naziv kupca<input name="name" required maxlength="300"></label><label>PIB ili JMBG<input name="tax_id" required inputmode="numeric" pattern="(?:[0-9]{9}|[0-9]{13})"></label><label>Matični broj<input name="registration_number" maxlength="30"></label><label class="span-2">Adresa<input name="street" required maxlength="300"></label><label>Grad<input name="city" required maxlength="120"></label><label>Poštanski broj<input name="postal_code" required maxlength="20"></label><label>Država<input name="country_code" value="RS" required minlength="2" maxlength="2"></label><label>Email<input name="email" type="email"></label><label>Telefon<input name="phone" maxlength="50"></label><label>JBKJS<input name="jbkjs" maxlength="30"></label><label class="span-2">Napomena<textarea name="notes" maxlength="2000" rows="2"></textarea></label></div>
+      <p class="form-error" id="customer-error"></p><div class="dialog-actions"><button type="button" class="secondary close-dialog">Odustani</button><button class="primary" type="submit">Sačuvaj kupca</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="item-dialog">
+    <form id="item-form">
+      <input name="id" type="hidden">
+      <div class="dialog-heading"><div><p class="eyebrow">ŠIFARNIK</p><h2 id="item-dialog-title">Novi artikal ili usluga</h2></div><button type="button" class="icon-button close-dialog" aria-label="Zatvori">×</button></div>
+      <div class="form-grid"><label class="span-2">Naziv<input name="name" required maxlength="300"></label><label>Šifra<input name="sku" required maxlength="100"></label><label>GTIN / barkod<input name="gtin" maxlength="30"></label><label>Jedinica mere<select name="unit_code"><option value="H87">Komad</option><option value="KGM">Kilogram</option><option value="LTR">Litar</option><option value="MTR">Metar</option><option value="MTK">m²</option><option value="MTQ">m³</option><option value="HUR">Sat</option><option value="DAY">Dan</option><option value="XPK">Paket</option></select></label><label>Cena bez PDV<input name="unit_price" type="number" min="0" step="0.01" value="0" required></label><label>PDV<select name="vat_choice"><option value="20:S">20%</option><option value="10:S">10%</option><option value="0:Z">0%</option><option value="0:O">Nije u PDV sistemu</option><option value="0:E">Oslobođeno PDV-a</option></select></label><label class="span-2">Opis<textarea name="description" maxlength="1000" rows="2"></textarea></label></div>
+      <p class="form-error" id="item-error"></p><div class="dialog-actions"><button type="button" class="secondary close-dialog">Odustani</button><button class="primary" type="submit">Sačuvaj artikal</button></div>
     </form>
   </dialog>
 

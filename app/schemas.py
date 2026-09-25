@@ -100,6 +100,55 @@ class OrganizationProfileUpdate(BaseModel):
     jbkjs: str | None = Field(default=None, max_length=30)
 
 
+class CustomerInput(BaseModel):
+    name: str = Field(min_length=2, max_length=300)
+    tax_id: str = Field(pattern=r"^(?:\d{9}|\d{13})$")
+    registration_number: str | None = Field(default=None, max_length=30)
+    street: str = Field(min_length=2, max_length=300)
+    city: str = Field(min_length=2, max_length=120)
+    postal_code: str = Field(min_length=2, max_length=20)
+    country_code: str = Field(default="RS", min_length=2, max_length=2)
+    email: EmailStr | None = None
+    phone: str | None = Field(default=None, max_length=50)
+    jbkjs: str | None = Field(default=None, max_length=30)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class CustomerOut(CustomerInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class CatalogItemInput(BaseModel):
+    name: str = Field(min_length=1, max_length=300)
+    sku: str = Field(min_length=1, max_length=100)
+    gtin: str | None = Field(default=None, max_length=30)
+    description: str | None = Field(default=None, max_length=1000)
+    unit_code: str = Field(default="H87", min_length=2, max_length=3)
+    unit_price: Decimal = Field(default=0, ge=0, max_digits=20, decimal_places=6)
+    vat_rate: Decimal = Field(default=20, ge=0, le=100, decimal_places=2)
+    vat_category: str = Field(default="S", min_length=1, max_length=4)
+
+    @model_validator(mode="after")
+    def normalize_vat(self):
+        if self.vat_category == "S" and self.vat_rate not in (Decimal("10"), Decimal("20")):
+            raise ValueError("Standardna PDV stopa mora biti 10% ili 20%")
+        if self.vat_category in {"Z", "E", "O"} and self.vat_rate != 0:
+            raise ValueError("Izabrana PDV kategorija mora imati stopu 0%")
+        return self
+
+
+class CatalogItemOut(CatalogItemInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
 class MembershipOut(BaseModel):
     id: UUID
     user_id: UUID

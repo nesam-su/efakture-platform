@@ -55,6 +55,8 @@ from app.models import (
     AuthSession,
     BackgroundJob,
     BusinessDocument,
+    CatalogItem,
+    Customer,
     Direction,
     DocumentArtifact,
     DocumentStatus,
@@ -76,8 +78,12 @@ from app.schemas import (
     ArtifactOut,
     AuthSessionOut,
     BootstrapRequest,
+    CatalogItemInput,
+    CatalogItemOut,
     CredentialOut,
     CredentialUpsert,
+    CustomerInput,
+    CustomerOut,
     DespatchFormCreate,
     DocumentCreate,
     DocumentFormCreate,
@@ -851,6 +857,140 @@ async def upsert_credential(
     await db.commit()
     await db.refresh(credential)
     return credential
+
+
+@router.get("/customers", response_model=list[CustomerOut])
+async def list_customers(
+    search: str | None = Query(default=None, max_length=100),
+    context: TenantContext = Depends(tenant_context),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(Customer).where(
+        Customer.organization_id == context.organization_id,
+        Customer.is_active.is_(True),
+    )
+    if search:
+        pattern = f"%{search.strip()}%"
+        query = query.where(Customer.name.ilike(pattern) | Customer.tax_id.ilike(pattern))
+    return list((await db.scalars(query.order_by(Customer.name).limit(500))).all())
+
+
+@router.post("/customers", response_model=CustomerOut, status_code=status.HTTP_201_CREATED)
+async def create_customer(
+    data: CustomerInput,
+    context: TenantContext = Depends(
+        require_roles(Role.owner, Role.admin, Role.accountant, Role.operator)
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    customer = Customer(
+        organization_id=context.organization_id,
+        **data.model_dump(exclude={"country_code"}),
+        country_code=data.country_code.upper(),
+    )
+    db.add(customer)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Kupac sa tim PIB-om već postoji") from None
+    await db.refresh(customer)
+    return customer
+
+
+@router.put("/customers/{customer_id}", response_model=CustomerOut)
+async def update_customer(
+    customer_id: UUID,
+    data: CustomerInput,
+    context: TenantContext = Depends(
+        require_roles(Role.owner, Role.admin, Role.accountant, Role.operator)
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    customer = await db.scalar(
+        select(Customer).where(
+            Customer.id == customer_id,
+            Customer.organization_id == context.organization_id,
+        )
+    )
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Kupac nije pronađen")
+    for field, value in data.model_dump().items():
+        setattr(customer, field, value.upper() if field == "country_code" else value)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Kupac sa tim PIB-om već postoji") from None
+    await db.refresh(customer)
+    return customer
+
+
+@router.get("/catalog-items", response_model=list[CatalogItemOut])
+async def list_catalog_items(
+    search: str | None = Query(default=None, max_length=100),
+    context: TenantContext = Depends(tenant_context),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(CatalogItem).where(
+        CatalogItem.organization_id == context.organization_id,
+        CatalogItem.is_active.is_(True),
+    )
+    if search:
+        pattern = f"%{search.strip()}%"
+        query = query.where(
+            CatalogItem.name.ilike(pattern)
+            | CatalogItem.sku.ilike(pattern)
+            | CatalogItem.gtin.ilike(pattern)
+        )
+    return list((await db.scalars(query.order_by(CatalogItem.name).limit(500))).all())
+
+
+@router.post("/catalog-items", response_model=CatalogItemOut, status_code=status.HTTP_201_CREATED)
+async def create_catalog_item(
+    data: CatalogItemInput,
+    context: TenantContext = Depends(
+        require_roles(Role.owner, Role.admin, Role.accountant, Role.operator)
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    item = CatalogItem(organization_id=context.organization_id, **data.model_dump())
+    db.add(item)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Artikal sa tom šifrom već postoji") from None
+    await db.refresh(item)
+    return item
+
+
+@router.put("/catalog-items/{item_id}", response_model=CatalogItemOut)
+async def update_catalog_item(
+    item_id: UUID,
+    data: CatalogItemInput,
+    context: TenantContext = Depends(
+        require_roles(Role.owner, Role.admin, Role.accountant, Role.operator)
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    item = await db.scalar(
+        select(CatalogItem).where(
+            CatalogItem.id == item_id,
+            CatalogItem.organization_id == context.organization_id,
+        )
+    )
+    if item is None:
+        raise HTTPException(status_code=404, detail="Artikal nije pronađen")
+    for field, value in data.model_dump().items():
+        setattr(item, field, value)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Artikal sa tom šifrom već postoji") from None
+    await db.refresh(item)
+    return item
 
 
 @router.get("/integrations", response_model=list[CredentialOut])

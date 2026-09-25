@@ -1,6 +1,6 @@
 # eDokumenti — eFakture i eOtpremnice
 
-Početni temelj višekorisničke web aplikacije za rad sa SEF eFakturama i eOtpremnicama. Projekat je spreman za Python 3.14, PostgreSQL i postavljanje na Hetzner VPS putem Docker Compose-a.
+Višekorisnička poslovna web aplikacija za brz unos i pregled faktura i otpremnica, sa SEF i eOtpremnice integracijama u pozadini. Projekat je spreman za Python 3.14, PostgreSQL i postavljanje na Hetzner VPS putem Docker Compose-a.
 
 Integracioni sloj je mapiran prema lokalnoj dokumentaciji od 31. jula i 21. avgusta 2026, SEF OpenAPI v1/v2 ugovorima, tehničkom uputstvu eOtpremnice 1.6.0 i UBL primerima 1.1.0. Zvanični izvori su ponovo provereni 23.09.2026: SEF je na 4.1.1, javni eOtpremnice Swagger ugovor je 1.6.0, a operativna izdanja su 1.6.3 na demo i 1.6.1 na produkciji. Klijenti ne pozivaju državne servise bez eksplicitno konfigurisanog ključa firme.
 
@@ -38,6 +38,10 @@ Integracioni sloj je mapiran prema lokalnoj dokumentaciji od 31. jula i 21. avgu
 - TOTP dvofaktorska prijava, zaštita od ponovne upotrebe koda i jednokratni rezervni kodovi.
 - kompletan web tok za dodavanje firme, email poziv i prihvatanje poziva za novog ili postojećeg korisnika.
 - bezbedan izbor Demo/Produkcija za svaku integraciju, sa Demo okruženjem kao podrazumevanim i fiksnim zvaničnim API adresama.
+- imenik kupaca po firmi, sa pretragom, izmenom i automatskim popunjavanjem dokumenta;
+- šifarnik artikala i usluga po firmi, sa cenom, jedinicom mere, GTIN-om i PDV pravilom;
+- jednostavan izbor PDV-a: 20%, 10%, 0%, nije u PDV sistemu ili oslobođeno;
+- širok, kontrastan unos dokumenta podeljen na jasno odvojene poslovne celine.
 
 ## Lokalno pokretanje
 
@@ -115,8 +119,10 @@ API adrese se biraju na serveru iz fiksne liste zvaničnih Demo/Produkcija adres
 
 1. U delu `Podešavanja` jednom unesite poslovnu adresu i email izabrane firme.
    Pravni naziv, PIB/JMBG i matični broj moraju biti podaci subjekta kome pripada API ključ.
-2. Na početnoj strani izaberite `Novi dokument`, a zatim SEF fakturu ili eOtpremnicu.
-3. Unesite kupca/primaoca, datume i jednu ili više stavki. Za otpremnicu se dodatno
+2. U delu `Kupci` unesite poslovne partnere koje često koristite.
+3. U delu `Artikli` unesite artikle i usluge, njihove cene, jedinice mere i PDV.
+4. Na početnoj strani izaberite `Novi dokument`, a zatim SEF fakturu ili eOtpremnicu.
+5. Izaberite sačuvanog kupca i artikle ili koristite ručni unos. Za otpremnicu se dodatno
    unose mesto otpreme/isporuke i podaci o transportu.
 4. Dugme `Generiši dokument` pravi UBL XML i čuva ga kao prilog nacrta. Opcija
    `Pošalji u red odmah nakon kreiranja` koristi prethodno sačuvan ključ izabrane firme.
