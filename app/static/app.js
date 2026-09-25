@@ -10,6 +10,26 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[char]);
 }
 
+function refreshRequiredMarkers(root = document) {
+  root.querySelectorAll("label").forEach(label => {
+    const controls = [...label.querySelectorAll("input, select, textarea")].filter(control => control.closest("label") === label);
+    if (!controls.length) return;
+    if (["checkbox", "radio"].includes(controls[0].type)) return;
+    let caption = [...label.children].find(child => child.classList?.contains("field-label"));
+    if (!caption) {
+      caption = document.createElement("span"); caption.className = "field-label";
+      [...label.childNodes].filter(node => node !== controls[0] && !controls[0].contains(node)).forEach(node => caption.append(node));
+      label.insertBefore(caption, controls[0]);
+    }
+    const required = controls.some(control => control.required && !control.disabled && control.type !== "hidden");
+    let marker = caption.querySelector(".required-marker");
+    if (required && !marker) {
+      marker = document.createElement("span"); marker.className = "required-marker"; marker.textContent = " *"; marker.title = "Obavezno polje"; marker.setAttribute("aria-hidden", "true");
+      caption.append(marker);
+    } else if (!required && marker) marker.remove();
+  });
+}
+
 function formatDate(value) {
   if (!value) return "—";
   const date = new Date(value);
@@ -262,6 +282,7 @@ async function loadIntegrations() {
   }).join("");
   $$(".integration-form").forEach(form => form.addEventListener("submit", saveIntegration));
   $$(".test-integration").forEach(button => button.addEventListener("click", testIntegration));
+  refreshRequiredMarkers($("#integration-list"));
 }
 
 async function testIntegration(event) {
@@ -409,6 +430,7 @@ function toggleDocumentType() {
     field.querySelectorAll("input,select").forEach(control => { control.disabled = !invoice; });
   });
   ["shipment_id", "planned_despatch_at", "actual_despatch_at", "planned_delivery_at", "despatch_street", "despatch_city", "despatch_postal_code", "despatch_country_code", "delivery_street", "delivery_city", "delivery_postal_code", "delivery_country_code"].forEach(name => { $("#document-form").elements[name].required = !invoice; });
+  refreshRequiredMarkers($("#document-form"));
 }
 
 function documentLines(provider) {
@@ -516,15 +538,16 @@ $("#document-new-customer").onclick = () => openCustomerDialog();
 $("#new-item-button").onclick = () => openItemDialog();
 $("#new-document-button").onclick = () => {
   const requiredProfile = ["street", "city", "postal_code", "country_code", "email"];
-  const validTaxId = /^(?:\d{9}|\d{13})$/.test(state.organization?.tax_id || "");
+  const validTaxId = /^\d{9}$/.test(state.organization?.tax_id || "");
   if (!validTaxId || requiredProfile.some(field => !state.organization?.profile?.[field])) { showView("settings"); showToast("Prvo unesite važeće pravne i poslovne podatke izabrane firme.", true); return; }
   $("#document-error").textContent = ""; resetDocumentForm(); $("#document-dialog").showModal();
 };
-$("#new-organization-button").onclick = () => { $("#organization-error").textContent = ""; $("#organization-dialog").showModal(); };
+$("#new-organization-button").onclick = () => { $("#organization-error").textContent = ""; refreshRequiredMarkers($("#organization-form")); $("#organization-dialog").showModal(); };
 $("#invite-button").onclick = () => {
   const form = $("#invite-form");
   form.innerHTML = inviteFormMarkup;
   form.querySelector(".close-dialog").onclick = () => $("#invite-dialog").close();
+  refreshRequiredMarkers(form);
   $("#invite-dialog").showModal();
 };
 $("#refresh-button").onclick = async () => { await loadWorkspace(); showToast("Podaci su osveženi."); };
@@ -548,4 +571,5 @@ if (invitationToken) {
   $("#accept-invitation-dialog").showModal();
 }
 
+refreshRequiredMarkers();
 if (sessionStorage.getItem(tokenKey)) initializeApp();

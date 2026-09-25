@@ -1,18 +1,31 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    SecretStr,
+    StringConstraints,
+    model_validator,
+)
 
 from app.integrations.environments import IntegrationEnvironment
 from app.models import Direction, DocumentStatus, JobStatus, Provider, Role
 
+DocumentNumber = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=3, max_length=100)
+]
+RegistrationNumber = Annotated[str, StringConstraints(pattern=r"^\d{8}$")]
+
 
 class BootstrapRequest(BaseModel):
     organization_name: str = Field(min_length=2, max_length=200)
-    tax_id: str = Field(pattern=r"^(?:\d{9}|\d{13})$")
-    registration_number: str | None = Field(default=None, max_length=30)
+    tax_id: str = Field(pattern=r"^\d{9}$")
+    registration_number: RegistrationNumber | None = None
     admin_name: str = Field(min_length=2, max_length=200)
     admin_email: EmailStr
     password: SecretStr = Field(min_length=12, max_length=200)
@@ -82,14 +95,14 @@ class OrganizationOut(BaseModel):
 
 class OrganizationCreate(BaseModel):
     name: str = Field(min_length=2, max_length=200)
-    tax_id: str = Field(pattern=r"^(?:\d{9}|\d{13})$")
-    registration_number: str | None = Field(default=None, max_length=30)
+    tax_id: str = Field(pattern=r"^\d{9}$")
+    registration_number: RegistrationNumber | None = None
 
 
 class OrganizationProfileUpdate(BaseModel):
     name: str = Field(min_length=2, max_length=200)
-    tax_id: str = Field(pattern=r"^(?:\d{9}|\d{13})$")
-    registration_number: str | None = Field(default=None, max_length=30)
+    tax_id: str = Field(pattern=r"^\d{9}$")
+    registration_number: RegistrationNumber | None = None
     street: str = Field(min_length=2, max_length=300)
     city: str = Field(min_length=2, max_length=120)
     postal_code: str = Field(min_length=2, max_length=20)
@@ -103,7 +116,7 @@ class OrganizationProfileUpdate(BaseModel):
 class CustomerInput(BaseModel):
     name: str = Field(min_length=2, max_length=300)
     tax_id: str = Field(pattern=r"^(?:\d{9}|\d{13})$")
-    registration_number: str | None = Field(default=None, max_length=30)
+    registration_number: RegistrationNumber | None = None
     street: str = Field(min_length=2, max_length=300)
     city: str = Field(min_length=2, max_length=120)
     postal_code: str = Field(min_length=2, max_length=20)
@@ -205,7 +218,7 @@ class DocumentCreate(BaseModel):
     provider: Provider
     direction: Direction
     document_type: str = Field(min_length=1, max_length=80)
-    document_number: str | None = Field(default=None, max_length=100)
+    document_number: DocumentNumber | None = None
     idempotency_key: str = Field(min_length=8, max_length=128)
     issue_date: datetime | None = None
     counterparty_name: str | None = Field(default=None, max_length=300)
@@ -225,7 +238,7 @@ class AddressInput(BaseModel):
 class PartyInput(BaseModel):
     name: str = Field(min_length=2, max_length=300)
     tax_id: str = Field(pattern=r"^(?:\d{9}|\d{13})$")
-    registration_number: str | None = Field(default=None, max_length=30)
+    registration_number: RegistrationNumber | None = None
     email: EmailStr | None = None
     jbkjs: str | None = Field(default=None, max_length=30)
     address: AddressInput
@@ -246,7 +259,7 @@ class DocumentLineInput(BaseModel):
 
 class InvoiceFormCreate(BaseModel):
     provider: Literal["sef"]
-    document_number: str = Field(min_length=1, max_length=100)
+    document_number: DocumentNumber
     issue_date: date
     due_date: date
     delivery_date: date
@@ -269,7 +282,7 @@ class InvoiceFormCreate(BaseModel):
 
 class DespatchFormCreate(BaseModel):
     provider: Literal["eotpremnice"]
-    document_number: str = Field(min_length=1, max_length=100)
+    document_number: DocumentNumber
     issue_date: date
     despatch_type: Literal["Ext", "Int"] = "Ext"
     order_reference: str | None = Field(default=None, max_length=100)
@@ -285,8 +298,8 @@ class DespatchFormCreate(BaseModel):
     gross_weight: Decimal | None = Field(default=None, gt=0, decimal_places=3)
     package_count: int | None = Field(default=None, gt=0)
     carrier_name: str | None = Field(default=None, max_length=300)
-    carrier_tax_id: str | None = Field(default=None, pattern=r"^(?:\d{9}|\d{13})$")
-    carrier_registration_number: str | None = Field(default=None, max_length=30)
+    carrier_tax_id: str | None = Field(default=None, pattern=r"^\d{9}$")
+    carrier_registration_number: RegistrationNumber | None = None
     vehicle_plate: str | None = Field(default=None, max_length=30)
     driver_name: str | None = Field(default=None, max_length=200)
     driver_email: EmailStr | None = None

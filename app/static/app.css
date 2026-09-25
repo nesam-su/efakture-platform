@@ -9,6 +9,7 @@ td{border-top-color:#dce3e8}
 input,select,textarea{border:1px solid #aebbc7;background:#fff;color:#111827;padding:11px 12px}
 textarea{width:100%;border-radius:9px;font:inherit;resize:vertical}
 input:focus,select:focus,textarea:focus{border-color:#006b5d;box-shadow:0 0 0 3px #006b5d24;outline:none}
+.field-label{display:inline}.required-marker{display:inline;color:var(--red);font-size:15px;font-weight:900}
 dialog.document-workspace{width:min(1500px,calc(100vw - 32px));max-width:none;max-height:calc(100vh - 28px)}
 dialog.document-workspace>form{padding:28px clamp(20px,3vw,42px)}
 .document-workspace .document-section{margin:22px 0;padding:20px;border:1px solid #b8c5ce;border-radius:12px;background:#f8fafb}

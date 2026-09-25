@@ -45,6 +45,8 @@ Integracioni sloj je mapiran prema lokalnoj dokumentaciji od 31. jula i 21. avgu
 - izmena lokalnog nacrta ili dokumenta koji je servis odbio pre prihvatanja, uz ponovno generisanje XML-a;
 - bezbedno brisanje neposlatih nacrta, dok se poslati i prihvaćeni dokumenti čuvaju;
 - SEF BT-8 šifra datuma poreske obaveze za standardnu fakturu prema zvaničnom UBL primeru.
+- provera PIB-a (9 cifara), matičnog broja (8 cifara) i broja dokumenta (najmanje 3 znaka), i u obrascu i u API-ju;
+- sva obavezna polja su jasno označena crvenom zvezdicom `*`.
 
 ## Lokalno pokretanje
 
