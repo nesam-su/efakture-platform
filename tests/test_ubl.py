@@ -94,6 +94,7 @@ def test_invoice_form_generates_totals_and_valid_ubl_xml():
     )
     assert invoice_totals(data) == (Decimal("250.00"), Decimal("45.00"), Decimal("295.00"))
     root = ET.fromstring(generate_invoice_xml(organization(), data))
+    assert root.findtext(f".//{{{CAC}}}InvoicePeriod/{{{CBC}}}DescriptionCode") == "35"
     assert root.findtext(f"{{{CBC}}}ID") == "FA-1/2026"
     assert root.findtext(f".//{{{CAC}}}AccountingSupplierParty//{{{CBC}}}Name") == (
         "Dobavljač & Sin"

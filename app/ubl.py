@@ -161,6 +161,8 @@ def generate_invoice_xml(organization: Organization, data: InvoiceFormCreate) ->
     if data.note:
         _element(root, CBC, "Note", data.note)
     _element(root, CBC, "DocumentCurrencyCode", data.currency.upper())
+    invoice_period = _element(root, CAC, "InvoicePeriod")
+    _element(invoice_period, CBC, "DescriptionCode", "35")
     _party(root, supplier, wrapper="AccountingSupplierParty")
     _party(root, data.customer, wrapper="AccountingCustomerParty")
     delivery = _element(root, CAC, "Delivery")

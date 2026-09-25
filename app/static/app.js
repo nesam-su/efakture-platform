@@ -201,6 +201,8 @@ function openItemDialog(item = null) {
 async function showDocument(documentId) {
   const doc = state.documents.find(item => item.id === documentId);
   if (!doc) return;
+  const editable = canEdit() && doc.direction === "outbound" && ["draft", "error"].includes(doc.status) && !doc.external_id && doc.payload?.source === "business_form";
+  const deletable = canEdit() && doc.direction === "outbound" && doc.status === "draft" && !doc.external_id;
   let artifacts = [];
   try { artifacts = await api(`/api/v1/documents/${documentId}/artifacts`); } catch (error) { showToast(error.message, true); }
   $("#document-detail").innerHTML = `<div class="dialog-heading"><div><p class="eyebrow">DETALJI DOKUMENTA</p><h2>${escapeHtml(doc.document_number || documentTypeNames[doc.document_type] || doc.document_type)}</h2></div><button class="icon-button" id="close-detail" aria-label="Zatvori">×</button></div>
@@ -208,10 +210,15 @@ async function showDocument(documentId) {
     <div class="detail-grid"><div class="detail-item"><span>Servis</span><strong>${doc.provider === "sef" ? "SEF" : "eOtpremnice"}</strong></div><div class="detail-item"><span>Udaljeni status</span><strong>${escapeHtml(doc.remote_status || "—")}</strong></div><div class="detail-item"><span>Partner</span><strong>${escapeHtml(doc.counterparty_name || "—")}</strong></div><div class="detail-item"><span>Iznos</span><strong>${formatAmount(doc.total_amount, doc.currency)}</strong></div></div>
     <h3>Prilozi</h3><div class="artifact-list">${artifacts.length ? artifacts.map(file => `<div class="artifact"><div><strong>${escapeHtml(file.kind)}</strong><small>${Math.ceil(file.size_bytes / 1024)} KB · ${escapeHtml(file.sha256.slice(0, 12))}…</small></div><button class="secondary artifact-download" data-artifact-id="${file.id}">Preuzmi</button></div>`).join("") : '<p class="muted">Nema priloga.</p>'}</div>
     ${doc.last_error ? `<p class="form-error">${escapeHtml(doc.last_error)}</p>` : ""}
-    <div class="dialog-actions"><button class="secondary" id="close-detail-bottom">Zatvori</button>${canEdit() && doc.direction === "outbound" && ["draft", "error"].includes(doc.status) ? `<button class="primary" id="queue-detail">Pošalji u red</button>` : ""}</div>`;
+    <div class="dialog-actions">${deletable ? '<button class="danger-button" id="delete-detail">Obriši nacrt</button>' : ""}<button class="secondary" id="close-detail-bottom">Zatvori</button>${editable ? '<button class="secondary" id="edit-detail">Izmeni</button>' : ""}${canEdit() && doc.direction === "outbound" && doc.status === "draft" ? '<button class="primary" id="queue-detail">Pošalji u red</button>' : ""}</div>`;
   const dialog = $("#detail-dialog"); dialog.showModal();
   $("#close-detail").onclick = () => dialog.close(); $("#close-detail-bottom").onclick = () => dialog.close();
   const queue = $("#queue-detail"); if (queue) queue.onclick = async () => { try { await api(`/api/v1/documents/${doc.id}/queue`, {method:"POST"}); dialog.close(); showToast("Dokument je dodat u red."); await loadDocuments(); await loadJobs(); } catch (error) { showToast(error.message, true); } };
+  const edit = $("#edit-detail"); if (edit) edit.onclick = () => openDocumentEditor(doc);
+  const remove = $("#delete-detail"); if (remove) remove.onclick = async () => {
+    if (!confirm(`Obrisati nacrt ${doc.document_number || "bez broja"}? Ova radnja se ne može poništiti.`)) return;
+    try { await api(`/api/v1/documents/${doc.id}`, {method:"DELETE"}); dialog.close(); showToast("Nacrt je obrisan."); await loadDocuments(); await loadJobs(); } catch (error) { showToast(error.message, true); }
+  };
   $$(".artifact-download").forEach(button => button.onclick = () => downloadArtifact(doc.id, button.dataset.artifactId));
 }
 
@@ -372,8 +379,9 @@ actualDespatchLabel.innerHTML = 'Stvarni polazak<input name="actual_despatch_at"
 plannedDespatchLabel.after(actualDespatchLabel);
 
 let documentLineSequence = 0;
+let editingDocumentId = null;
 
-function addDocumentLine() {
+function addDocumentLine(line = null) {
   documentLineSequence += 1;
   const row = document.createElement("div"); row.className = "document-line";
   const itemOptions = state.items.map(item => `<option value="${item.id}">${escapeHtml(item.name)} · ${escapeHtml(item.sku)}</option>`).join("");
@@ -385,6 +393,10 @@ function addDocumentLine() {
     const values = {line_name:item.name,line_sku:item.sku,line_gtin:item.gtin,line_quantity:"1",line_unit:item.unit_code,line_price:item.unit_price,line_vat_choice:`${Number(item.vat_rate)}:${item.vat_category}`,line_description:item.description};
     Object.entries(values).forEach(([name, value]) => { const control = row.querySelector(`[name=${name}]`); if (control) control.value = value ?? ""; });
   };
+  if (line) {
+    const values = {line_name:line.name,line_sku:line.seller_item_id,line_gtin:line.gtin,line_quantity:line.quantity,line_unit:line.unit_code,line_price:line.unit_price,line_vat_choice:`${Number(line.vat_rate || 0)}:${line.vat_category || "S"}`,line_description:line.description};
+    Object.entries(values).forEach(([name, value]) => { const control = row.querySelector(`[name=${name}]`); if (control) control.value = value ?? ""; });
+  }
   $("#document-lines").append(row); toggleDocumentType();
 }
 
@@ -409,9 +421,37 @@ function documentLines(provider) {
 }
 
 function resetDocumentForm() {
-  const form = $("#document-form"); form.reset(); documentLineSequence = 0; $("#document-lines").innerHTML = ""; addDocumentLine();
+  const form = $("#document-form"); form.reset(); editingDocumentId = null; documentLineSequence = 0; $("#document-lines").innerHTML = ""; addDocumentLine();
+  $("#document-dialog-eyebrow").textContent = "NOVI POSLOVNI DOKUMENT"; $("#document-dialog-title").textContent = "Unos bez XML-a"; $("#document-submit-button").textContent = "Generiši dokument";
   const today = new Date().toISOString().slice(0, 10); form.elements.issue_date.value = today; form.elements.delivery_date.value = today;
   const due = new Date(); due.setDate(due.getDate() + 15); form.elements.due_date.value = due.toISOString().slice(0, 10); toggleDocumentType();
+}
+
+function localDateTimeValue(value) {
+  if (!value) return "";
+  const date = new Date(value); if (Number.isNaN(date.valueOf())) return String(value).slice(0, 16);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+function openDocumentEditor(doc) {
+  const data = doc.payload?.form; if (!data) return;
+  resetDocumentForm(); editingDocumentId = doc.id;
+  $("#document-dialog-eyebrow").textContent = doc.status === "error" ? "ISPRAVKA NEUSPEŠNOG DOKUMENTA" : "IZMENA NACRTA";
+  $("#document-dialog-title").textContent = doc.document_number || "Izmena dokumenta"; $("#document-submit-button").textContent = "Sačuvaj izmene";
+  const form = $("#document-form");
+  ["provider", "document_number", "issue_date", "note"].forEach(name => { form.elements[name].value = data[name] || ""; });
+  const customer = data.customer || {}; const address = customer.address || {};
+  const customerValues = {customer_name:customer.name,customer_tax_id:customer.tax_id,customer_registration_number:customer.registration_number,customer_street:address.street,customer_city:address.city,customer_postal_code:address.postal_code,customer_country_code:address.country_code,customer_email:customer.email,customer_jbkjs:customer.jbkjs};
+  Object.entries(customerValues).forEach(([name, value]) => { form.elements[name].value = value || ""; });
+  const savedCustomer = state.customers.find(item => item.tax_id === customer.tax_id); $("#document-customer-select").value = savedCustomer?.id || "";
+  if (data.provider === "sef") {
+    ["delivery_date", "due_date", "currency", "payment_account", "payment_reference"].forEach(name => { form.elements[name].value = data[name] || ""; });
+  } else {
+    const values = {despatch_type:data.despatch_type,shipment_id:data.shipment_id,shipment_method:data.shipment_method,order_reference:data.order_reference,planned_despatch_at:localDateTimeValue(data.planned_despatch_at),actual_despatch_at:localDateTimeValue(data.actual_despatch_at),planned_delivery_at:localDateTimeValue(data.planned_delivery_at),despatch_street:data.despatch_address?.street,despatch_city:data.despatch_address?.city,despatch_postal_code:data.despatch_address?.postal_code,despatch_country_code:data.despatch_address?.country_code,delivery_street:data.delivery_address?.street,delivery_city:data.delivery_address?.city,delivery_postal_code:data.delivery_address?.postal_code,delivery_country_code:data.delivery_address?.country_code,gross_weight:data.gross_weight,package_count:data.package_count,carrier_name:data.carrier_name,carrier_tax_id:data.carrier_tax_id,carrier_registration_number:data.carrier_registration_number,vehicle_plate:data.vehicle_plate,driver_name:data.driver_name,driver_email:data.driver_email};
+    Object.entries(values).forEach(([name, value]) => { if (form.elements[name]) form.elements[name].value = value ?? ""; });
+  }
+  documentLineSequence = 0; $("#document-lines").innerHTML = ""; (data.lines || []).forEach(line => addDocumentLine(line)); if (!data.lines?.length) addDocumentLine();
+  form.elements.queue_after_create.checked = false; toggleDocumentType(); $("#document-error").textContent = ""; $("#detail-dialog").close(); $("#document-dialog").showModal();
 }
 
 $("#document-form").addEventListener("submit", async event => {
@@ -420,7 +460,8 @@ $("#document-form").addEventListener("submit", async event => {
   const payload = {provider, document_number:data.document_number, issue_date:data.issue_date, note:data.note || null, customer, lines:documentLines(provider), queue_after_create:Boolean(data.queue_after_create)};
   if (provider === "sef") Object.assign(payload, {delivery_date:data.delivery_date, due_date:data.due_date, currency:data.currency, payment_account:data.payment_account || null, payment_reference:data.payment_reference || null});
   else Object.assign(payload, {despatch_type:data.despatch_type, shipment_id:data.shipment_id, shipment_method:data.shipment_method, order_reference:data.order_reference || null, planned_despatch_at:new Date(data.planned_despatch_at).toISOString(), actual_despatch_at:new Date(data.actual_despatch_at).toISOString(), planned_delivery_at:new Date(data.planned_delivery_at).toISOString(), despatch_address:{street:data.despatch_street, city:data.despatch_city, postal_code:data.despatch_postal_code, country_code:data.despatch_country_code.toUpperCase()}, delivery_address:{street:data.delivery_street, city:data.delivery_city, postal_code:data.delivery_postal_code, country_code:data.delivery_country_code.toUpperCase()}, gross_weight:data.gross_weight ? Number(data.gross_weight) : null, package_count:data.package_count ? Number(data.package_count) : null, carrier_name:data.carrier_name || null, carrier_tax_id:data.carrier_tax_id || null, carrier_registration_number:data.carrier_registration_number || null, vehicle_plate:data.vehicle_plate || null, driver_name:data.driver_name || null, driver_email:data.driver_email || null});
-  try { await api("/api/v1/documents/from-form", {method:"POST", body:JSON.stringify(payload)}); $("#document-dialog").close(); showToast(data.queue_after_create ? "Dokument je generisan i dodat u red." : "Dokument i UBL XML su sačuvani."); await loadDocuments(); await loadJobs(); } catch (error) { $("#document-error").textContent = error.message; }
+  const path = editingDocumentId ? `/api/v1/documents/${editingDocumentId}/from-form` : "/api/v1/documents/from-form";
+  try { await api(path, {method:editingDocumentId ? "PUT" : "POST", body:JSON.stringify(payload)}); $("#document-dialog").close(); showToast(editingDocumentId ? "Izmene su sačuvane i XML je ponovo generisan." : (data.queue_after_create ? "Dokument je generisan i dodat u red." : "Dokument i UBL XML su sačuvani.")); editingDocumentId = null; await loadDocuments(); await loadJobs(); } catch (error) { $("#document-error").textContent = error.message; }
 });
 
 $("#customer-form").addEventListener("submit", async event => {

@@ -105,7 +105,7 @@
 
   <dialog id="document-dialog" class="document-workspace">
     <form id="document-form">
-      <div class="dialog-heading"><div><p class="eyebrow">NOVI POSLOVNI DOKUMENT</p><h2>Unos bez XML-a</h2></div><button type="button" class="icon-button close-dialog" aria-label="Zatvori">×</button></div>
+      <div class="dialog-heading"><div><p class="eyebrow" id="document-dialog-eyebrow">NOVI POSLOVNI DOKUMENT</p><h2 id="document-dialog-title">Unos bez XML-a</h2></div><button type="button" class="icon-button close-dialog" aria-label="Zatvori">×</button></div>
       <div class="form-grid">
         <label>Servis<select name="provider" required><option value="sef">SEF eFakture</option><option value="eotpremnice">eOtpremnice</option></select></label>
         <label>Broj dokumenta<input name="document_number" required maxlength="100"></label>
@@ -119,7 +119,7 @@
       <label class="check"><input name="queue_after_create" type="checkbox"> Pošalji u red odmah nakon kreiranja</label>
       <p class="muted small">UBL XML se automatski generiše i čuva uz dokument.</p>
       <p class="form-error" id="document-error"></p>
-      <div class="dialog-actions"><button type="button" class="secondary close-dialog">Odustani</button><button class="primary" type="submit">Generiši dokument</button></div>
+      <div class="dialog-actions"><button type="button" class="secondary close-dialog">Odustani</button><button class="primary" id="document-submit-button" type="submit">Generiši dokument</button></div>
     </form>
   </dialog>
 

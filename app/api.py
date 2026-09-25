@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, time, timedelta
+from decimal import Decimal
 from urllib.parse import quote, urlencode
 from uuid import UUID, uuid4
 
@@ -1095,20 +1096,9 @@ async def create_document_from_form(
     if organization is None:
         raise HTTPException(status_code=404, detail="Firma nije pronađena")
     try:
-        if isinstance(data, DespatchFormCreate):
-            xml = generate_despatch_xml(organization, data)
-            provider = Provider.eotpremnice
-            document_type = "despatch_advice"
-            currency = None
-            total_amount = None
-            filename = f"otpremnica-{data.document_number}.xml"
-        else:
-            xml = generate_invoice_xml(organization, data)
-            provider = Provider.sef
-            document_type = "sales_invoice"
-            currency = data.currency.upper()
-            total_amount = invoice_totals(data)[2]
-            filename = f"faktura-{data.document_number}.xml"
+        xml, provider, document_type, currency, total_amount, filename = (
+            _render_business_document(organization, data)
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=422,
@@ -1182,6 +1172,207 @@ async def create_document_from_form(
         raise
     await db.refresh(document)
     return document
+
+
+def _render_business_document(
+    organization: Organization, data: DocumentFormCreate
+) -> tuple[bytes, Provider, str, str | None, Decimal | None, str]:
+    if isinstance(data, DespatchFormCreate):
+        return (
+            generate_despatch_xml(organization, data),
+            Provider.eotpremnice,
+            "despatch_advice",
+            None,
+            None,
+            f"otpremnica-{data.document_number}.xml",
+        )
+    return (
+        generate_invoice_xml(organization, data),
+        Provider.sef,
+        "sales_invoice",
+        data.currency.upper(),
+        invoice_totals(data)[2],
+        f"faktura-{data.document_number}.xml",
+    )
+
+
+@router.put("/documents/{document_id}/from-form", response_model=DocumentOut)
+async def update_document_from_form(
+    document_id: UUID,
+    data: DocumentFormCreate,
+    context: TenantContext = Depends(
+        require_roles(Role.owner, Role.admin, Role.accountant, Role.operator)
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    document = await _tenant_document(
+        db, document_id=document_id, organization_id=context.organization_id
+    )
+    if (
+        document.direction != Direction.outbound
+        or document.status not in {DocumentStatus.draft, DocumentStatus.error}
+        or document.external_id is not None
+        or document.payload.get("source") != "business_form"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Mogu se menjati samo lokalni nacrti i neuspešni neposlati dokumenti",
+        )
+    if data.provider != document.provider.value:
+        raise HTTPException(status_code=409, detail="Vrsta servisa dokumenta ne može se menjati")
+
+    organization = await db.get(Organization, context.organization_id)
+    if organization is None:
+        raise HTTPException(status_code=404, detail="Firma nije pronađena")
+    try:
+        xml, provider, document_type, currency, total_amount, filename = (
+            _render_business_document(organization, data)
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Dopunite poslovni profil izabrane firme pre izmene dokumenta",
+        ) from exc
+
+    artifact = await db.scalar(
+        select(DocumentArtifact)
+        .where(
+            DocumentArtifact.document_id == document.id,
+            DocumentArtifact.organization_id == organization.id,
+            DocumentArtifact.kind == "generated_xml",
+        )
+        .order_by(DocumentArtifact.created_at.desc())
+    )
+    stored = await artifact_store.put_bytes(
+        organization_id=organization.id,
+        document_id=document.id,
+        filename=filename,
+        content=xml,
+    )
+    old_object_key = artifact.object_key if artifact is not None else None
+    try:
+        if artifact is None:
+            artifact = DocumentArtifact(
+                organization_id=organization.id,
+                document_id=document.id,
+                kind="generated_xml",
+                object_key=stored.object_key,
+                content_type="application/xml",
+                size_bytes=stored.size_bytes,
+                sha256=stored.sha256,
+            )
+            db.add(artifact)
+            await db.flush()
+        else:
+            artifact.object_key = stored.object_key
+            artifact.content_type = "application/xml"
+            artifact.size_bytes = stored.size_bytes
+            artifact.sha256 = stored.sha256
+
+        document.provider = provider
+        document.document_type = document_type
+        document.document_number = data.document_number
+        document.issue_date = datetime.combine(data.issue_date, time.min, tzinfo=UTC)
+        document.counterparty_name = data.customer.name
+        document.counterparty_tax_id = data.customer.tax_id
+        document.currency = currency
+        document.total_amount = total_amount
+        document.payload = {"source": "business_form", "form": data.model_dump(mode="json")}
+        document.remote_status = None
+        document.remote_status_at = None
+        document.last_error = None
+
+        job = await db.scalar(
+            select(BackgroundJob).where(
+                BackgroundJob.document_id == document.id,
+                BackgroundJob.kind == "send_document",
+            )
+        )
+        if data.queue_after_create:
+            if job is None:
+                job = BackgroundJob(
+                    organization_id=organization.id,
+                    document_id=document.id,
+                    kind="send_document",
+                    payload={"artifact_id": str(artifact.id)},
+                )
+                db.add(job)
+            else:
+                job.status = JobStatus.queued
+                job.payload = {"artifact_id": str(artifact.id)}
+                job.attempts = 0
+                job.available_at = datetime.now(UTC)
+                job.finished_at = None
+                job.last_error = None
+            document.status = DocumentStatus.queued
+        else:
+            if job is not None:
+                await db.delete(job)
+            document.status = DocumentStatus.draft
+
+        db.add(
+            AuditEvent(
+                organization_id=organization.id,
+                actor_user_id=context.user.id,
+                action="document.update",
+                entity_type="business_document",
+                entity_id=str(document.id),
+                details={"provider": provider.value, "queued": data.queue_after_create},
+            )
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        artifact_store.delete(stored.object_key)
+        raise
+    if old_object_key and old_object_key != stored.object_key:
+        artifact_store.delete(old_object_key)
+    await db.refresh(document)
+    return document
+
+
+@router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_draft_document(
+    document_id: UUID,
+    context: TenantContext = Depends(
+        require_roles(Role.owner, Role.admin, Role.accountant, Role.operator)
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    document = await _tenant_document(
+        db, document_id=document_id, organization_id=context.organization_id
+    )
+    if (
+        document.direction != Direction.outbound
+        or document.status != DocumentStatus.draft
+        or document.external_id is not None
+    ):
+        raise HTTPException(status_code=409, detail="Može se obrisati samo neposlati nacrt")
+    artifacts = list(
+        (
+            await db.scalars(
+                select(DocumentArtifact).where(
+                    DocumentArtifact.document_id == document.id,
+                    DocumentArtifact.organization_id == context.organization_id,
+                )
+            )
+        ).all()
+    )
+    object_keys = [artifact.object_key for artifact in artifacts]
+    db.add(
+        AuditEvent(
+            organization_id=context.organization_id,
+            actor_user_id=context.user.id,
+            action="document.delete",
+            entity_type="business_document",
+            entity_id=str(document.id),
+            details={"document_number": document.document_number},
+        )
+    )
+    await db.delete(document)
+    await db.commit()
+    for object_key in object_keys:
+        artifact_store.delete(object_key)
 
 
 @router.get("/documents", response_model=list[DocumentOut])

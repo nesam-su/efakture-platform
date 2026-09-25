@@ -42,6 +42,9 @@ Integracioni sloj je mapiran prema lokalnoj dokumentaciji od 31. jula i 21. avgu
 - šifarnik artikala i usluga po firmi, sa cenom, jedinicom mere, GTIN-om i PDV pravilom;
 - jednostavan izbor PDV-a: 20%, 10%, 0%, nije u PDV sistemu ili oslobođeno;
 - širok, kontrastan unos dokumenta podeljen na jasno odvojene poslovne celine.
+- izmena lokalnog nacrta ili dokumenta koji je servis odbio pre prihvatanja, uz ponovno generisanje XML-a;
+- bezbedno brisanje neposlatih nacrta, dok se poslati i prihvaćeni dokumenti čuvaju;
+- SEF BT-8 šifra datuma poreske obaveze za standardnu fakturu prema zvaničnom UBL primeru.
 
 ## Lokalno pokretanje
 
