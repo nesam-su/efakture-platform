@@ -47,7 +47,7 @@ from app.dependencies import (
     tenant_context,
 )
 from app.integrations.environments import integration_base_url
-from app.integrations.eotpremnice import EotpremniceClient
+from app.integrations.eotpremnice import EotpremniceClient, new_request_id
 from app.integrations.http import GovernmentApiError
 from app.integrations.sef import SefClient
 from app.mail import enqueue_email
@@ -1146,7 +1146,7 @@ async def create_document_from_form(
                     organization_id=organization.id,
                     document_id=document.id,
                     kind="send_document",
-                    payload={"artifact_id": str(artifact.id)},
+                    payload=_send_job_payload(artifact.id, provider),
                 )
             )
             document.status = DocumentStatus.queued
@@ -1194,6 +1194,13 @@ def _render_business_document(
         invoice_totals(data)[2],
         f"faktura-{data.document_number}.xml",
     )
+
+
+def _send_job_payload(artifact_id: UUID, provider: Provider) -> dict[str, str]:
+    payload = {"artifact_id": str(artifact_id)}
+    if provider == Provider.eotpremnice:
+        payload["request_id"] = new_request_id()
+    return payload
 
 
 @router.put("/documents/{document_id}/from-form", response_model=DocumentOut)
@@ -1294,12 +1301,12 @@ async def update_document_from_form(
                     organization_id=organization.id,
                     document_id=document.id,
                     kind="send_document",
-                    payload={"artifact_id": str(artifact.id)},
+                    payload=_send_job_payload(artifact.id, provider),
                 )
                 db.add(job)
             else:
                 job.status = JobStatus.queued
-                job.payload = {"artifact_id": str(artifact.id)}
+                job.payload = _send_job_payload(artifact.id, provider)
                 job.attempts = 0
                 job.available_at = datetime.now(UTC)
                 job.finished_at = None
@@ -1560,7 +1567,7 @@ async def queue_document(
             organization_id=context.organization_id,
             document_id=document.id,
             kind="send_document",
-            payload={"artifact_id": str(artifact.id)},
+            payload=_send_job_payload(artifact.id, document.provider),
         )
         db.add(job)
     elif job.status in {JobStatus.queued, JobStatus.running, JobStatus.retrying}:
@@ -1569,7 +1576,7 @@ async def queue_document(
         raise HTTPException(status_code=409, detail="Dokument je već uspešno poslat")
     else:
         job.status = JobStatus.queued
-        job.payload = {"artifact_id": str(artifact.id)}
+        job.payload = _send_job_payload(artifact.id, document.provider)
         job.attempts = 0
         job.available_at = datetime.now(UTC)
         job.finished_at = None

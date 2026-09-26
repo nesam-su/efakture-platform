@@ -17,7 +17,7 @@ from sqlalchemy import or_, select
 from app.core.config import get_settings
 from app.core.security import decrypt_secret
 from app.db import SessionFactory
-from app.integrations.eotpremnice import EotpremniceClient
+from app.integrations.eotpremnice import EotpremniceClient, new_request_id
 from app.integrations.http import GovernmentApiError
 from app.integrations.sef import SefClient
 from app.mail import build_email
@@ -134,17 +134,21 @@ async def _send_document(job_id: UUID) -> None:
             document.external_id = _response_external_id(response)
             document.remote_status = "Submitted"
         elif document.provider == Provider.eotpremnice:
+            request_id = str(job.payload.get("request_id") or new_request_id())
+            if job.payload.get("request_id") != request_id:
+                job.payload = {**job.payload, "request_id": request_id}
+                await db.commit()
             async with EotpremniceClient(api_key=api_key, base_url=credential.base_url) as client:
                 response = await client.submit_document(
                     xml,
-                    request_id=document.idempotency_key,
+                    request_id=request_id,
                     filename=artifact_store.resolve(artifact.object_key).name,
                 )
             external_request = await db.scalar(
                 select(ExternalRequest).where(
                     ExternalRequest.organization_id == document.organization_id,
                     ExternalRequest.provider == Provider.eotpremnice,
-                    ExternalRequest.request_id == document.idempotency_key,
+                    ExternalRequest.request_id == request_id,
                 )
             )
             if external_request is None:
@@ -152,7 +156,7 @@ async def _send_document(job_id: UUID) -> None:
                     organization_id=document.organization_id,
                     document_id=document.id,
                     provider=Provider.eotpremnice,
-                    request_id=document.idempotency_key,
+                    request_id=request_id,
                 )
                 db.add(external_request)
             external_request.status = "Submitted"

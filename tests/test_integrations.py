@@ -1,10 +1,12 @@
 from datetime import date
+from uuid import uuid4
 
 import httpx
 import pytest
 
+from app.api import _send_job_payload
 from app.integrations.environments import integration_base_url
-from app.integrations.eotpremnice import EotpremniceClient
+from app.integrations.eotpremnice import EotpremniceClient, new_request_id
 from app.integrations.sef import SefClient
 from app.models import Provider
 
@@ -73,6 +75,27 @@ async def test_eotpremnice_submit_and_pull_contract():
         await client.aclose()
     assert len(calls) == 3
     assert changes["totalCount"] == 0
+
+
+def test_eotpremnice_request_id_is_unique_for_each_submission():
+    first = new_request_id()
+    second = new_request_id()
+
+    assert first != second
+    assert len(first) == 36
+    assert len(second) == 36
+
+
+def test_each_eotpremnice_send_job_gets_a_new_request_id():
+    artifact_id = uuid4()
+
+    first = _send_job_payload(artifact_id, Provider.eotpremnice)
+    second = _send_job_payload(artifact_id, Provider.eotpremnice)
+    sef = _send_job_payload(artifact_id, Provider.sef)
+
+    assert first["artifact_id"] == str(artifact_id)
+    assert first["request_id"] != second["request_id"]
+    assert "request_id" not in sef
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Any, Literal
+from uuid import uuid4
 
 import httpx
 
@@ -18,6 +19,11 @@ EOTPREMNICE_PRODUCTION_RELEASE = "1.6.1"
 Role = Literal["suppliers", "customers", "carriers"]
 DocumentKind = Literal["despatch-advices", "receipt-advices"]
 ArtifactKind = Literal["xml", "pdf", "signature", "qr"]
+
+
+def new_request_id() -> str:
+    """Return a fresh identifier for one logical eOtpremnice submission."""
+    return str(uuid4())
 
 
 class EotpremniceClient(ApiKeyClient):
