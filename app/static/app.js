@@ -499,6 +499,11 @@ function serbianCalendarDate() {
   return `${value.year}-${value.month}-${value.day}`;
 }
 
+function syncDespatchDateConstraints() {
+  const form = $("#document-form"); const issueDate = form.elements.issue_date.value;
+  form.elements.actual_despatch_at.min = issueDate ? `${issueDate}T00:00` : "";
+}
+
 function openDocumentEditor(doc) {
   const data = doc.payload?.form; if (!data) return;
   resetDocumentForm(); editingDocumentId = doc.id;
@@ -518,7 +523,7 @@ function openDocumentEditor(doc) {
     Object.entries(values).forEach(([name, value]) => { if (form.elements[name]) form.elements[name].value = value ?? ""; });
   }
   documentLineSequence = 0; $("#document-lines").innerHTML = ""; (data.lines || []).forEach(line => addDocumentLine(line)); if (!data.lines?.length) addDocumentLine();
-  form.elements.queue_after_create.checked = false; toggleDocumentType(); $("#document-error").textContent = ""; $("#detail-dialog").close(); $("#document-dialog").showModal();
+  form.elements.queue_after_create.checked = false; toggleDocumentType(); syncDespatchDateConstraints(); $("#document-error").textContent = ""; $("#detail-dialog").close(); $("#document-dialog").showModal();
 }
 
 $("#document-form").addEventListener("submit", async event => {
@@ -577,6 +582,7 @@ $("#accept-invitation-form").addEventListener("submit", async event => {
 
 $("#document-form [name=provider]").addEventListener("change", toggleDocumentType);
 $("#document-form [name=shipment_method]").addEventListener("change", toggleCarrierRequirements);
+$("#document-form [name=issue_date]").addEventListener("change", syncDespatchDateConstraints);
 $("#document-customer-select").addEventListener("change", event => fillCustomer(state.customers.find(customer => customer.id === event.target.value)));
 $("#add-document-line").onclick = addDocumentLine;
 $("#new-customer-button").onclick = () => openCustomerDialog();

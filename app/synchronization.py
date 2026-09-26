@@ -357,6 +357,19 @@ async def _handle_request_event(
         request.business_messages = messages
     document = await db.get(BusinessDocument, request.document_id) if request.document_id else None
     if document is not None:
+        newer_request_id = await db.scalar(
+            select(ExternalRequest.id)
+            .where(
+                ExternalRequest.organization_id == organization_id,
+                ExternalRequest.provider == Provider.eotpremnice,
+                ExternalRequest.document_id == document.id,
+                ExternalRequest.created_at > request.created_at,
+            )
+            .order_by(ExternalRequest.created_at.desc())
+            .limit(1)
+        )
+        if newer_request_id is not None:
+            return
         document_id = data.get("documentId") or data.get("id")
         if document_id:
             document.external_id = str(document_id)

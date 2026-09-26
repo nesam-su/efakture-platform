@@ -2,6 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from pydantic import (
     BaseModel,
@@ -20,6 +21,7 @@ DocumentNumber = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=3, max_length=100)
 ]
 RegistrationNumber = Annotated[str, StringConstraints(pattern=r"^\d{8}$")]
+SERBIA = ZoneInfo("Europe/Belgrade")
 
 
 class BootstrapRequest(BaseModel):
@@ -308,6 +310,15 @@ class DespatchFormCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_despatch(self):
+        actual_despatch_date = (
+            self.actual_despatch_at.astimezone(SERBIA).date()
+            if self.actual_despatch_at.tzinfo is not None
+            else self.actual_despatch_at.date()
+        )
+        if actual_despatch_date < self.issue_date:
+            raise ValueError(
+                "Stvarni datum otpreme ne može biti pre datuma izdavanja eOtpremnice"
+            )
         if self.planned_delivery_at < self.planned_despatch_at:
             raise ValueError("Planirani prijem ne može biti pre planirane otpreme")
         if self.planned_delivery_at < self.actual_despatch_at:

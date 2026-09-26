@@ -130,3 +130,19 @@ def test_document_form_uses_provider_discriminator_and_clear_carrier_error():
     assert len(errors) == 1
     assert errors[0]["loc"] == ("eotpremnice",)
     assert "Naziv, PIB i matični broj prevoznika obavezni su" in errors[0]["msg"]
+
+
+def test_despatch_rejects_actual_despatch_before_issue_date():
+    payload = despatch_data()
+    payload.update(
+        {
+            "issue_date": "2026-09-26",
+            "actual_despatch_at": "2026-09-25T23:00:00+02:00",
+            "carrier_name": "Prevoz DOO",
+            "carrier_tax_id": "111222333",
+            "carrier_registration_number": "12345678",
+        }
+    )
+
+    with pytest.raises(ValidationError, match="Stvarni datum otpreme ne može biti pre"):
+        TypeAdapter(DocumentFormCreate).validate_python(payload)
