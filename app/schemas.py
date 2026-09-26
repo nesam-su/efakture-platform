@@ -329,6 +329,9 @@ DocumentFormCreate = InvoiceFormCreate | DespatchFormCreate
 
 class DocumentOut(DocumentCreate):
     model_config = ConfigDict(from_attributes=True)
+    # Istorijski i uvezeni dokumenti mogu imati kraći broj. Ograničenje od tri
+    # znaka važi za novi unos, ali ne sme da onemogući prikaz postojeće arhive.
+    document_number: str | None = Field(default=None, max_length=100)
     id: UUID
     status: DocumentStatus
     remote_status: str | None

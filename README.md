@@ -47,6 +47,7 @@ Integracioni sloj je mapiran prema lokalnoj dokumentaciji od 31. jula i 21. avgu
 - SEF BT-8 šifra datuma poreske obaveze za standardnu fakturu prema zvaničnom UBL primeru.
 - provera PIB-a (9 cifara), matičnog broja (8 cifara) i broja dokumenta (najmanje 3 znaka), i u obrascu i u API-ju;
 - sva obavezna polja su jasno označena crvenom zvezdicom `*`.
+- istorijski i uvezeni dokumenti sa kraćim brojem ostaju vidljivi, dok novi unos i dalje zahteva najmanje 3 znaka.
 
 ## Lokalno pokretanje
 

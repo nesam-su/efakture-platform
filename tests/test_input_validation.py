@@ -1,7 +1,10 @@
+from datetime import UTC, datetime
+from uuid import uuid4
+
 import pytest
 from pydantic import ValidationError
 
-from app.schemas import CustomerInput, InvoiceFormCreate, OrganizationCreate
+from app.schemas import CustomerInput, DocumentOut, InvoiceFormCreate, OrganizationCreate
 
 
 def invoice_data(document_number: str) -> dict:
@@ -63,3 +66,24 @@ def test_document_number_requires_at_least_three_visible_characters():
 
     document = InvoiceFormCreate(**invoice_data("  FA-1  "))
     assert document.document_number == "FA-1"
+
+
+def test_document_output_keeps_legacy_short_document_numbers_visible():
+    now = datetime.now(UTC)
+    document = DocumentOut(
+        id=uuid4(),
+        provider="sef",
+        direction="outbound",
+        document_type="sales_invoice",
+        document_number="2",
+        idempotency_key="legacy-2",
+        status="draft",
+        remote_status=None,
+        remote_status_at=None,
+        external_id=None,
+        last_error=None,
+        created_at=now,
+        updated_at=now,
+    )
+
+    assert document.document_number == "2"
