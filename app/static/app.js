@@ -72,6 +72,10 @@ function clearSession() {
   location.reload();
 }
 
+function validationMessage(item) {
+  return String(item?.msg || "Neispravan unos").replace(/^Value error,\s*/i, "");
+}
+
 async function api(path, options = {}) {
   const token = sessionStorage.getItem(tokenKey);
   const headers = {...(options.headers || {})};
@@ -83,7 +87,7 @@ async function api(path, options = {}) {
   if (response.status === 401 && !publicAuthPaths.includes(path)) clearSession();
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    const detail = Array.isArray(body.detail) ? body.detail.map(item => item.msg).join("; ") : body.detail;
+    const detail = Array.isArray(body.detail) ? body.detail.map(validationMessage).join("; ") : body.detail;
     throw new Error(detail || `Zahtev nije uspeo (${response.status})`);
   }
   if (response.status === 204) return null;
@@ -457,6 +461,13 @@ function toggleDocumentType() {
     field.querySelectorAll("input,select").forEach(control => { control.disabled = !invoice; });
   });
   ["shipment_id", "planned_despatch_at", "actual_despatch_at", "planned_delivery_at", "despatch_street", "despatch_city", "despatch_postal_code", "despatch_country_code", "delivery_street", "delivery_city", "delivery_postal_code", "delivery_country_code"].forEach(name => { $("#document-form").elements[name].required = !invoice; });
+  toggleCarrierRequirements();
+}
+
+function toggleCarrierRequirements() {
+  const form = $("#document-form");
+  const carrierRequired = form.elements.provider.value === "eotpremnice" && form.elements.shipment_method.value === "2";
+  ["carrier_name", "carrier_tax_id", "carrier_registration_number"].forEach(name => { form.elements[name].required = carrierRequired; });
   refreshRequiredMarkers($("#document-form"));
 }
 
@@ -558,6 +569,7 @@ $("#accept-invitation-form").addEventListener("submit", async event => {
 });
 
 $("#document-form [name=provider]").addEventListener("change", toggleDocumentType);
+$("#document-form [name=shipment_method]").addEventListener("change", toggleCarrierRequirements);
 $("#document-customer-select").addEventListener("change", event => fillCustomer(state.customers.find(customer => customer.id === event.target.value)));
 $("#add-document-line").onclick = addDocumentLine;
 $("#new-customer-button").onclick = () => openCustomerDialog();

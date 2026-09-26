@@ -20,4 +20,13 @@ def test_frontend_uses_provider_specific_send_labels():
     assert 'return provider === "sef" ? "SEF" : "eOtpremnice"' in script
     assert "Pošalji u red" not in script
     assert "Pošalji u red" not in template
-    assert '/static/app.js?v=0.8.4' in template
+    assert '/static/app.js?v=0.8.5' in template
+
+
+def test_carrier_fields_are_required_for_external_carrier_transport():
+    script = (PROJECT_ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert 'form.elements.shipment_method.value === "2"' in script
+    assert '["carrier_name", "carrier_tax_id", "carrier_registration_number"]' in script
+    assert 'addEventListener("change", toggleCarrierRequirements)' in script
+    assert 'replace(/^Value error,\\s*/i, "")' in script

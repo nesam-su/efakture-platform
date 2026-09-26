@@ -2,9 +2,15 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
-from app.schemas import CustomerInput, DocumentOut, InvoiceFormCreate, OrganizationCreate
+from app.schemas import (
+    CustomerInput,
+    DocumentFormCreate,
+    DocumentOut,
+    InvoiceFormCreate,
+    OrganizationCreate,
+)
 
 
 def invoice_data(document_number: str) -> dict:
@@ -36,6 +42,33 @@ def invoice_data(document_number: str) -> dict:
                 "vat_category": "S",
             }
         ],
+    }
+
+
+def despatch_data() -> dict:
+    return {
+        "provider": "eotpremnice",
+        "document_number": "OT-1/2026",
+        "issue_date": "2026-09-25",
+        "customer": invoice_data("FA-1")["customer"],
+        "shipment_id": "POS-1",
+        "shipment_method": "2",
+        "planned_despatch_at": "2026-09-25T08:00:00+02:00",
+        "actual_despatch_at": "2026-09-25T08:10:00+02:00",
+        "planned_delivery_at": "2026-09-25T12:00:00+02:00",
+        "despatch_address": {
+            "street": "Magacin 1",
+            "city": "Subotica",
+            "postal_code": "24000",
+            "country_code": "RS",
+        },
+        "delivery_address": {
+            "street": "Odredište 2",
+            "city": "Novi Sad",
+            "postal_code": "21000",
+            "country_code": "RS",
+        },
+        "lines": [{"name": "Roba", "quantity": 1, "unit_code": "H87"}],
     }
 
 
@@ -87,3 +120,13 @@ def test_document_output_keeps_legacy_short_document_numbers_visible():
     )
 
     assert document.document_number == "2"
+
+
+def test_document_form_uses_provider_discriminator_and_clear_carrier_error():
+    with pytest.raises(ValidationError) as error:
+        TypeAdapter(DocumentFormCreate).validate_python(despatch_data())
+
+    errors = error.value.errors()
+    assert len(errors) == 1
+    assert errors[0]["loc"] == ("eotpremnice",)
+    assert "Naziv, PIB i matični broj prevoznika obavezni su" in errors[0]["msg"]

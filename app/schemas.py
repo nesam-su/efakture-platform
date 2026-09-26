@@ -317,6 +317,10 @@ class DespatchFormCreate(BaseModel):
             self.carrier_tax_id,
             self.carrier_registration_number,
         )
+        if self.shipment_method == "2" and not all(carrier_fields):
+            raise ValueError(
+                "Naziv, PIB i matični broj prevoznika obavezni su kada je način otpreme Prevoznik"
+            )
         if any(carrier_fields) and not all(carrier_fields):
             raise ValueError("Naziv, PIB i matični broj prevoznika unose se zajedno")
         if self.driver_name and not self.driver_email:
@@ -324,7 +328,9 @@ class DespatchFormCreate(BaseModel):
         return self
 
 
-DocumentFormCreate = InvoiceFormCreate | DespatchFormCreate
+DocumentFormCreate = Annotated[
+    InvoiceFormCreate | DespatchFormCreate, Field(discriminator="provider")
+]
 
 
 class DocumentOut(DocumentCreate):
