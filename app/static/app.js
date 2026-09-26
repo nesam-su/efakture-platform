@@ -493,6 +493,12 @@ function localDateTimeValue(value) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
+function serbianCalendarDate() {
+  const parts = new Intl.DateTimeFormat("en-US", {timeZone:"Europe/Belgrade", year:"numeric", month:"2-digit", day:"2-digit"}).formatToParts(new Date());
+  const value = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
 function openDocumentEditor(doc) {
   const data = doc.payload?.form; if (!data) return;
   resetDocumentForm(); editingDocumentId = doc.id;
@@ -500,6 +506,7 @@ function openDocumentEditor(doc) {
   $("#document-dialog-title").textContent = doc.document_number || "Izmena dokumenta"; $("#document-submit-button").textContent = "Sačuvaj izmene";
   const form = $("#document-form");
   ["provider", "document_number", "issue_date", "note"].forEach(name => { form.elements[name].value = data[name] || ""; });
+  if (data.provider === "eotpremnice") form.elements.issue_date.value = serbianCalendarDate();
   const customer = data.customer || {}; const address = customer.address || {};
   const customerValues = {customer_name:customer.name,customer_tax_id:customer.tax_id,customer_registration_number:customer.registration_number,customer_street:address.street,customer_city:address.city,customer_postal_code:address.postal_code,customer_country_code:address.country_code,customer_email:customer.email,customer_jbkjs:customer.jbkjs};
   Object.entries(customerValues).forEach(([name, value]) => { form.elements[name].value = value || ""; });

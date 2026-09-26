@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from urllib.parse import quote, urlencode
 from uuid import UUID, uuid4
@@ -47,7 +47,11 @@ from app.dependencies import (
     tenant_context,
 )
 from app.integrations.environments import integration_base_url
-from app.integrations.eotpremnice import EotpremniceClient, new_request_id
+from app.integrations.eotpremnice import (
+    EotpremniceClient,
+    issue_date_is_current,
+    new_request_id,
+)
 from app.integrations.http import GovernmentApiError
 from app.integrations.sef import SefClient
 from app.mail import enqueue_email
@@ -1095,6 +1099,8 @@ async def create_document_from_form(
     organization = await db.get(Organization, context.organization_id)
     if organization is None:
         raise HTTPException(status_code=404, detail="Firma nije pronađena")
+    if data.queue_after_create:
+        _require_current_eotpremnice_issue_date(data.provider, data.issue_date)
     try:
         xml, provider, document_type, currency, total_amount, filename = (
             _render_business_document(organization, data)
@@ -1203,6 +1209,14 @@ def _send_job_payload(artifact_id: UUID, provider: Provider) -> dict[str, str]:
     return payload
 
 
+def _require_current_eotpremnice_issue_date(provider: str, issue_date: date) -> None:
+    if provider == Provider.eotpremnice.value and not issue_date_is_current(issue_date):
+        raise HTTPException(
+            status_code=422,
+            detail="Datum izdavanja eOtpremnice mora biti današnji datum po kalendaru Srbije",
+        )
+
+
 @router.put("/documents/{document_id}/from-form", response_model=DocumentOut)
 async def update_document_from_form(
     document_id: UUID,
@@ -1227,6 +1241,8 @@ async def update_document_from_form(
         )
     if data.provider != document.provider.value:
         raise HTTPException(status_code=409, detail="Vrsta servisa dokumenta ne može se menjati")
+    if data.queue_after_create:
+        _require_current_eotpremnice_issue_date(data.provider, data.issue_date)
 
     organization = await db.get(Organization, context.organization_id)
     if organization is None:
@@ -1544,6 +1560,10 @@ async def queue_document(
     )
     if document.direction != Direction.outbound:
         raise HTTPException(status_code=409, detail="Samo izlazni dokument može biti poslat")
+    if document.provider == Provider.eotpremnice and document.issue_date is not None:
+        _require_current_eotpremnice_issue_date(
+            document.provider.value, document.issue_date.date()
+        )
     artifact = await db.scalar(
         select(DocumentArtifact)
         .where(

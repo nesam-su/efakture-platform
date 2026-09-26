@@ -20,7 +20,7 @@ def test_frontend_uses_provider_specific_send_labels():
     assert 'return provider === "sef" ? "SEF" : "eOtpremnice"' in script
     assert "Pošalji u red" not in script
     assert "Pošalji u red" not in template
-    assert '/static/app.js?v=0.8.5' in template
+    assert '/static/app.js?v=0.8.7' in template
 
 
 def test_carrier_fields_are_required_for_external_carrier_transport():
@@ -30,3 +30,10 @@ def test_carrier_fields_are_required_for_external_carrier_transport():
     assert '["carrier_name", "carrier_tax_id", "carrier_registration_number"]' in script
     assert 'addEventListener("change", toggleCarrierRequirements)' in script
     assert 'replace(/^Value error,\\s*/i, "")' in script
+
+
+def test_existing_despatch_editor_uses_current_serbian_issue_date():
+    script = (PROJECT_ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert 'timeZone:"Europe/Belgrade"' in script
+    assert 'form.elements.issue_date.value = serbianCalendarDate()' in script

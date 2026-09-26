@@ -17,7 +17,11 @@ from sqlalchemy import or_, select
 from app.core.config import get_settings
 from app.core.security import decrypt_secret
 from app.db import SessionFactory
-from app.integrations.eotpremnice import EotpremniceClient, new_request_id
+from app.integrations.eotpremnice import (
+    EotpremniceClient,
+    issue_date_is_current,
+    new_request_id,
+)
 from app.integrations.http import GovernmentApiError
 from app.integrations.sef import SefClient
 from app.mail import build_email
@@ -134,6 +138,12 @@ async def _send_document(job_id: UUID) -> None:
             document.external_id = _response_external_id(response)
             document.remote_status = "Submitted"
         elif document.provider == Provider.eotpremnice:
+            if document.issue_date is None or not issue_date_is_current(
+                document.issue_date.date()
+            ):
+                raise PermanentJobError(
+                    "Datum izdavanja eOtpremnice mora biti današnji datum po kalendaru Srbije"
+                )
             request_id = str(job.payload.get("request_id") or new_request_id())
             if job.payload.get("request_id") != request_id:
                 job.payload = {**job.payload, "request_id": request_id}

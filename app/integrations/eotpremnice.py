@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Literal
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -19,11 +20,20 @@ EOTPREMNICE_PRODUCTION_RELEASE = "1.6.1"
 Role = Literal["suppliers", "customers", "carriers"]
 DocumentKind = Literal["despatch-advices", "receipt-advices"]
 ArtifactKind = Literal["xml", "pdf", "signature", "qr"]
+SERBIA = ZoneInfo("Europe/Belgrade")
 
 
 def new_request_id() -> str:
     """Return a fresh identifier for one logical eOtpremnice submission."""
     return str(uuid4())
+
+
+def current_serbian_date() -> date:
+    return datetime.now(SERBIA).date()
+
+
+def issue_date_is_current(issue_date: date, *, today: date | None = None) -> bool:
+    return issue_date == (today or current_serbian_date())
 
 
 class EotpremniceClient(ApiKeyClient):

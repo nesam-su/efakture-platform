@@ -6,7 +6,11 @@ import pytest
 
 from app.api import _send_job_payload
 from app.integrations.environments import integration_base_url
-from app.integrations.eotpremnice import EotpremniceClient, new_request_id
+from app.integrations.eotpremnice import (
+    EotpremniceClient,
+    issue_date_is_current,
+    new_request_id,
+)
 from app.integrations.sef import SefClient
 from app.models import Provider
 
@@ -96,6 +100,13 @@ def test_each_eotpremnice_send_job_gets_a_new_request_id():
     assert first["artifact_id"] == str(artifact_id)
     assert first["request_id"] != second["request_id"]
     assert "request_id" not in sef
+
+
+def test_eotpremnice_issue_date_must_match_serbian_calendar_date():
+    today = date(2026, 9, 26)
+
+    assert issue_date_is_current(today, today=today)
+    assert not issue_date_is_current(date(2026, 9, 25), today=today)
 
 
 @pytest.mark.asyncio
