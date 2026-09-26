@@ -428,6 +428,10 @@ const plannedDespatchLabel = $("#document-form [name=planned_despatch_at]").clos
 const actualDespatchLabel = document.createElement("label");
 actualDespatchLabel.innerHTML = 'Stvarni polazak<input name="actual_despatch_at" type="datetime-local">';
 plannedDespatchLabel.after(actualDespatchLabel);
+const despatchDateHint = document.createElement("p");
+despatchDateHint.className = "muted small";
+despatchDateHint.textContent = "Datum izdavanja je današnji datum Srbije. Polasci ne mogu biti ranije, a planirani prijem mora biti posle oba polaska.";
+$("#despatch-fields .form-grid").before(despatchDateHint);
 
 let documentLineSequence = 0;
 let editingDocumentId = null;
@@ -453,6 +457,10 @@ function addDocumentLine(line = null) {
 
 function toggleDocumentType() {
   const provider = $("#document-form [name=provider]").value; const invoice = provider === "sef";
+  const issueDate = $("#document-form").elements.issue_date;
+  issueDate.readOnly = !invoice;
+  issueDate.min = invoice ? "" : serbianCalendarDate(); issueDate.max = invoice ? "" : serbianCalendarDate();
+  if (!invoice) issueDate.value = serbianCalendarDate();
   $("#queue-after-create-label").textContent = `${sendButtonLabel(provider)} odmah nakon kreiranja`;
   $("#invoice-fields").hidden = !invoice; $("#invoice-fields").disabled = !invoice;
   $("#despatch-fields").hidden = invoice; $("#despatch-fields").disabled = invoice;
@@ -461,6 +469,7 @@ function toggleDocumentType() {
     field.querySelectorAll("input,select").forEach(control => { control.disabled = !invoice; });
   });
   ["shipment_id", "planned_despatch_at", "actual_despatch_at", "planned_delivery_at", "despatch_street", "despatch_city", "despatch_postal_code", "despatch_country_code", "delivery_street", "delivery_city", "delivery_postal_code", "delivery_country_code"].forEach(name => { $("#document-form").elements[name].required = !invoice; });
+  ensureDespatchDateDefaults(); syncDespatchDateConstraints();
   toggleCarrierRequirements();
 }
 
@@ -499,9 +508,32 @@ function serbianCalendarDate() {
   return `${value.year}-${value.month}-${value.day}`;
 }
 
+function serbianDateTimeValue(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {timeZone:"Europe/Belgrade", year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", hourCycle:"h23"}).formatToParts(date);
+  const value = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}T${value.hour}:${value.minute}`;
+}
+
+function ensureDespatchDateDefaults() {
+  const form = $("#document-form"); if (form.elements.provider.value !== "eotpremnice") return;
+  const issueDate = serbianCalendarDate(); const now = serbianDateTimeValue();
+  const planned = form.elements.planned_despatch_at; const actual = form.elements.actual_despatch_at; const delivery = form.elements.planned_delivery_at;
+  if (!planned.value || planned.value.slice(0, 10) < issueDate) planned.value = now;
+  if (!actual.value || actual.value.slice(0, 10) < issueDate) actual.value = now;
+  const earliestDelivery = [planned.value, actual.value, `${issueDate}T00:00`].sort().at(-1);
+  if (!delivery.value || delivery.value < earliestDelivery) delivery.value = serbianDateTimeValue(new Date(Date.now() + 60 * 60 * 1000));
+  if (delivery.value < earliestDelivery) delivery.value = earliestDelivery;
+}
+
 function syncDespatchDateConstraints() {
   const form = $("#document-form"); const issueDate = form.elements.issue_date.value;
-  form.elements.actual_despatch_at.min = issueDate ? `${issueDate}T00:00` : "";
+  const minimum = issueDate ? `${issueDate}T00:00` : "";
+  const planned = form.elements.planned_despatch_at; const actual = form.elements.actual_despatch_at; const delivery = form.elements.planned_delivery_at;
+  planned.min = minimum; actual.min = minimum;
+  delivery.min = [minimum, planned.value, actual.value].filter(Boolean).sort().at(-1) || "";
+  planned.setCustomValidity(planned.value && planned.value < minimum ? "Planirani polazak ne može biti pre datuma izdavanja." : "");
+  actual.setCustomValidity(actual.value && actual.value < minimum ? "Stvarni polazak ne može biti pre datuma izdavanja." : "");
+  delivery.setCustomValidity(delivery.value && delivery.value < delivery.min ? "Planirani prijem mora biti posle planiranog i stvarnog polaska." : "");
 }
 
 function openDocumentEditor(doc) {
@@ -583,6 +615,9 @@ $("#accept-invitation-form").addEventListener("submit", async event => {
 $("#document-form [name=provider]").addEventListener("change", toggleDocumentType);
 $("#document-form [name=shipment_method]").addEventListener("change", toggleCarrierRequirements);
 $("#document-form [name=issue_date]").addEventListener("change", syncDespatchDateConstraints);
+$("#document-form [name=planned_despatch_at]").addEventListener("input", syncDespatchDateConstraints);
+$("#document-form [name=actual_despatch_at]").addEventListener("input", syncDespatchDateConstraints);
+$("#document-form [name=planned_delivery_at]").addEventListener("input", syncDespatchDateConstraints);
 $("#document-customer-select").addEventListener("change", event => fillCustomer(state.customers.find(customer => customer.id === event.target.value)));
 $("#add-document-line").onclick = addDocumentLine;
 $("#new-customer-button").onclick = () => openCustomerDialog();

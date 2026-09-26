@@ -137,7 +137,9 @@ def test_despatch_rejects_actual_despatch_before_issue_date():
     payload.update(
         {
             "issue_date": "2026-09-26",
+            "planned_despatch_at": "2026-09-26T08:00:00+02:00",
             "actual_despatch_at": "2026-09-25T23:00:00+02:00",
+            "planned_delivery_at": "2026-09-26T12:00:00+02:00",
             "carrier_name": "Prevoz DOO",
             "carrier_tax_id": "111222333",
             "carrier_registration_number": "12345678",
@@ -145,4 +147,22 @@ def test_despatch_rejects_actual_despatch_before_issue_date():
     )
 
     with pytest.raises(ValidationError, match="Stvarni datum otpreme ne može biti pre"):
+        TypeAdapter(DocumentFormCreate).validate_python(payload)
+
+
+def test_despatch_rejects_planned_despatch_before_issue_date():
+    payload = despatch_data()
+    payload.update(
+        {
+            "issue_date": "2026-09-26",
+            "planned_despatch_at": "2026-09-25T23:00:00+02:00",
+            "actual_despatch_at": "2026-09-26T08:00:00+02:00",
+            "planned_delivery_at": "2026-09-26T12:00:00+02:00",
+            "carrier_name": "Prevoz DOO",
+            "carrier_tax_id": "111222333",
+            "carrier_registration_number": "12345678",
+        }
+    )
+
+    with pytest.raises(ValidationError, match="Planirani datum otpreme ne može biti pre"):
         TypeAdapter(DocumentFormCreate).validate_python(payload)

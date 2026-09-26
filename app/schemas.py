@@ -310,11 +310,20 @@ class DespatchFormCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_despatch(self):
+        planned_despatch_date = (
+            self.planned_despatch_at.astimezone(SERBIA).date()
+            if self.planned_despatch_at.tzinfo is not None
+            else self.planned_despatch_at.date()
+        )
         actual_despatch_date = (
             self.actual_despatch_at.astimezone(SERBIA).date()
             if self.actual_despatch_at.tzinfo is not None
             else self.actual_despatch_at.date()
         )
+        if planned_despatch_date < self.issue_date:
+            raise ValueError(
+                "Planirani datum otpreme ne može biti pre datuma izdavanja eOtpremnice"
+            )
         if actual_despatch_date < self.issue_date:
             raise ValueError(
                 "Stvarni datum otpreme ne može biti pre datuma izdavanja eOtpremnice"

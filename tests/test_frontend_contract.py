@@ -20,7 +20,7 @@ def test_frontend_uses_provider_specific_send_labels():
     assert 'return provider === "sef" ? "SEF" : "eOtpremnice"' in script
     assert "Pošalji u red" not in script
     assert "Pošalji u red" not in template
-    assert '/static/app.js?v=0.8.8' in template
+    assert '/static/app.js?v=0.8.9' in template
 
 
 def test_carrier_fields_are_required_for_external_carrier_transport():
@@ -37,4 +37,7 @@ def test_existing_despatch_editor_uses_current_serbian_issue_date():
 
     assert 'timeZone:"Europe/Belgrade"' in script
     assert 'form.elements.issue_date.value = serbianCalendarDate()' in script
-    assert 'form.elements.actual_despatch_at.min = issueDate ? `${issueDate}T00:00` : ""' in script
+    assert 'issueDate.readOnly = !invoice' in script
+    assert 'planned.min = minimum; actual.min = minimum' in script
+    assert 'delivery.min = [minimum, planned.value, actual.value]' in script
+    assert 'Datum izdavanja je današnji datum Srbije' in script
