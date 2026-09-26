@@ -6,8 +6,8 @@
   <meta name="color-scheme" content="light">
   <title>eDokumenti</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/app.css">
-  <link rel="stylesheet" href="/static/security.css">
+  <link rel="stylesheet" href="/static/app.css?v=0.8.4">
+  <link rel="stylesheet" href="/static/security.css?v=0.8.4">
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -51,7 +51,7 @@
         <button class="nav-item" data-view="settings"><span>⚙</span>Podešavanja</button>
       </nav>
       <div class="sidebar-footer">
-        <div class="sync-note"><i></i><span>Automatska sinhronizacija</span></div>
+        <div class="sync-note"><i></i><span>Osvežavanje na 5 sekundi</span></div>
         <button class="nav-item" id="logout"><span>⇥</span>Odjava</button>
       </div>
     </aside>
@@ -116,7 +116,7 @@
       <fieldset class="document-section"><legend>Primalac / kupac</legend><div class="quick-picker"><label>Izaberite sačuvanog kupca<select id="document-customer-select"><option value="">Ručni unos / novi kupac</option></select></label><button type="button" class="secondary" id="document-new-customer">+ Dodaj kupca</button></div><div class="form-grid"><label class="span-2">Naziv<input name="customer_name" required maxlength="300"></label><label>PIB ili JMBG<input name="customer_tax_id" required inputmode="numeric" pattern="(?:[0-9]{9}|[0-9]{13})" title="Unesite tačno 9 cifara PIB-a ili 13 cifara JMBG-a"></label><label>Matični broj<input name="customer_registration_number" inputmode="numeric" pattern="[0-9]{8}" minlength="8" maxlength="8" title="Unesite tačno 8 cifara matičnog broja"></label><label>Adresa<input name="customer_street" required maxlength="300"></label><label>Grad<input name="customer_city" required maxlength="120"></label><label>Poštanski broj<input name="customer_postal_code" required maxlength="20"></label><label>Država<input name="customer_country_code" value="RS" required minlength="2" maxlength="2"></label><label>Email<input name="customer_email" type="email"></label><label>JBKJS<input name="customer_jbkjs" maxlength="30"></label></div></fieldset>
       <fieldset class="document-section"><legend>Stavke</legend><div id="document-lines"></div><button type="button" class="secondary" id="add-document-line">+ Dodaj stavku</button></fieldset>
       <label>Napomena<textarea name="note" maxlength="2000" rows="3"></textarea></label>
-      <label class="check"><input name="queue_after_create" type="checkbox"> Pošalji u red odmah nakon kreiranja</label>
+      <label class="check"><input name="queue_after_create" type="checkbox"><span id="queue-after-create-label">Pošalji u SEF odmah nakon kreiranja</span></label>
       <p class="muted small">UBL XML se automatski generiše i čuva uz dokument.</p>
       <p class="form-error" id="document-error"></p>
       <div class="dialog-actions"><button type="button" class="secondary close-dialog">Odustani</button><button class="primary" id="document-submit-button" type="submit">Generiši dokument</button></div>
@@ -194,6 +194,6 @@
       <div class="dialog-actions"><button class="primary" type="submit">Promeni lozinku</button></div>
     </form>
   </dialog>
-  <script src="/static/app.js" defer></script>
+  <script src="/static/app.js?v=0.8.4" defer></script>
 </body>
 </html>

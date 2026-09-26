@@ -131,7 +131,7 @@ API adrese se biraju na serveru iz fiksne liste zvaničnih Demo/Produkcija adres
 5. Izaberite sačuvanog kupca i artikle ili koristite ručni unos. Za otpremnicu se dodatno
    unose mesto otpreme/isporuke i podaci o transportu.
 4. Dugme `Generiši dokument` pravi UBL XML i čuva ga kao prilog nacrta. Opcija
-   `Pošalji u red odmah nakon kreiranja` koristi prethodno sačuvan ključ izabrane firme.
+   `Pošalji u SEF` ili `Pošalji u eOtpremnice` koristi prethodno sačuvan ključ izabrane firme.
 
 Ključevi se ne unose uz svaki dokument. Šifrovano se čuvaju po firmi i okruženju,
 a menjaju se samo kada korisnik želi da zameni ključ ili pređe sa Demo na Produkciju.
@@ -152,6 +152,8 @@ da se obavezna polja ne mešaju sa uobičajenim unosom.
 5. Rezultat i greške se vide kroz `GET /api/v1/jobs` i dokument API, a svaka promena se auditira.
 
 ## Automatska sinhronizacija
+
+Aktivni ekran se tiho osvežava svakih 5 sekundi. Osvežavanje se pauzira dok je otvoren dijalog za unos ili izmenu, kako se podaci koje korisnik unosi ne bi izgubili.
 
 Worker periodično obrađuje svaki aktivni API ključ firme. SEF tokovi koriste zaseban dnevni cursor za prodajne i ulazne fakture i, prema ugovoru servisa, traže isključivo datume iz prošlosti. eOtpremnice koriste zaseban datum/stranicu za zahteve, pošiljaoca, primaoca i prevoznika. Greška jednog toka ne prekida ostale tokove. Događaj se jedinstveno prepoznaje po firmi, servisu, toku i udaljenom identifikatoru, pa ponovno čitanje ne pravi duplikate.
 

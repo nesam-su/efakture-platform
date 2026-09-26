@@ -1,6 +1,8 @@
 const tokenKey = "edokumenti_access_token";
 const organizationKey = "edokumenti_organization_id";
 const state = {organizations: [], organization: null, documents: [], customers: [], items: [], jobs: [], events: [], members: [], sessions: [], integrations: []};
+const autoRefreshIntervalMs = 5000;
+let autoRefreshBusy = false;
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -46,6 +48,14 @@ const roleNames = {owner:"Vlasnik",admin:"Administrator",accountant:"Knjigovođa
 const documentTypeNames = {sales_invoice:"Izlazna faktura",purchase_invoice:"Ulazna faktura",despatch_advice:"Otpremnica",receipt_advice:"Prijemnica"};
 const unitNames = {H87:"Komad",KGM:"Kilogram",LTR:"Litar",MTR:"Metar",MTK:"m²",MTQ:"m³",HUR:"Sat",DAY:"Dan",XPK:"Paket"};
 const vatNames = {"20:S":"20%","10:S":"10%","0:Z":"0%","0:O":"Nije u PDV sistemu","0:E":"Oslobođeno PDV-a"};
+
+function providerDestination(provider) {
+  return provider === "sef" ? "SEF" : "eOtpremnice";
+}
+
+function sendButtonLabel(provider) {
+  return `Pošalji u ${providerDestination(provider)}`;
+}
 
 function showToast(message, error = false) {
   const toast = $("#toast");
@@ -121,6 +131,22 @@ async function loadWorkspace() {
   const results = await Promise.allSettled(loaders);
   const failed = results.find(result => result.status === "rejected");
   if (failed) showToast(failed.reason.message, true);
+}
+
+async function autoRefreshActiveView() {
+  if (autoRefreshBusy || document.hidden || !sessionStorage.getItem(tokenKey) || !state.organization || document.querySelector("dialog[open]")) return;
+  const view = $(".view.active")?.id.replace("view-", "") || "documents";
+  const refreshers = {
+    documents: [loadDocuments],
+    customers: [loadCustomers],
+    items: [loadCatalogItems],
+    jobs: [loadJobs],
+    events: [loadEvents],
+    members: [loadMembers, loadSessions],
+  }[view];
+  if (!refreshers) return;
+  autoRefreshBusy = true;
+  try { await Promise.allSettled(refreshers.map(refresh => refresh())); } finally { autoRefreshBusy = false; }
 }
 
 function renderOrganizationProfile() {
@@ -230,10 +256,10 @@ async function showDocument(documentId) {
     <div class="detail-grid"><div class="detail-item"><span>Servis</span><strong>${doc.provider === "sef" ? "SEF" : "eOtpremnice"}</strong></div><div class="detail-item"><span>Udaljeni status</span><strong>${escapeHtml(doc.remote_status || "—")}</strong></div><div class="detail-item"><span>Partner</span><strong>${escapeHtml(doc.counterparty_name || "—")}</strong></div><div class="detail-item"><span>Iznos</span><strong>${formatAmount(doc.total_amount, doc.currency)}</strong></div></div>
     <h3>Prilozi</h3><div class="artifact-list">${artifacts.length ? artifacts.map(file => `<div class="artifact"><div><strong>${escapeHtml(file.kind)}</strong><small>${Math.ceil(file.size_bytes / 1024)} KB · ${escapeHtml(file.sha256.slice(0, 12))}…</small></div><button class="secondary artifact-download" data-artifact-id="${file.id}">Preuzmi</button></div>`).join("") : '<p class="muted">Nema priloga.</p>'}</div>
     ${doc.last_error ? `<p class="form-error">${escapeHtml(doc.last_error)}</p>` : ""}
-    <div class="dialog-actions">${deletable ? '<button class="danger-button" id="delete-detail">Obriši nacrt</button>' : ""}<button class="secondary" id="close-detail-bottom">Zatvori</button>${editable ? '<button class="secondary" id="edit-detail">Izmeni</button>' : ""}${canEdit() && doc.direction === "outbound" && doc.status === "draft" ? '<button class="primary" id="queue-detail">Pošalji u red</button>' : ""}</div>`;
+    <div class="dialog-actions">${deletable ? '<button class="danger-button" id="delete-detail">Obriši nacrt</button>' : ""}<button class="secondary" id="close-detail-bottom">Zatvori</button>${editable ? '<button class="secondary" id="edit-detail">Izmeni</button>' : ""}${canEdit() && doc.direction === "outbound" && doc.status === "draft" ? `<button class="primary" id="queue-detail">${sendButtonLabel(doc.provider)}</button>` : ""}</div>`;
   const dialog = $("#detail-dialog"); dialog.showModal();
   $("#close-detail").onclick = () => dialog.close(); $("#close-detail-bottom").onclick = () => dialog.close();
-  const queue = $("#queue-detail"); if (queue) queue.onclick = async () => { try { await api(`/api/v1/documents/${doc.id}/queue`, {method:"POST"}); dialog.close(); showToast("Dokument je dodat u red."); await loadDocuments(); await loadJobs(); } catch (error) { showToast(error.message, true); } };
+  const queue = $("#queue-detail"); if (queue) queue.onclick = async () => { try { await api(`/api/v1/documents/${doc.id}/queue`, {method:"POST"}); dialog.close(); showToast(`Slanje u ${providerDestination(doc.provider)} je pokrenuto.`); await loadDocuments(); await loadJobs(); } catch (error) { showToast(error.message, true); } };
   const edit = $("#edit-detail"); if (edit) edit.onclick = () => openDocumentEditor(doc);
   const remove = $("#delete-detail"); if (remove) remove.onclick = async () => {
     if (!confirm(`Obrisati nacrt ${doc.document_number || "bez broja"}? Ova radnja se ne može poništiti.`)) return;
@@ -423,6 +449,7 @@ function addDocumentLine(line = null) {
 
 function toggleDocumentType() {
   const provider = $("#document-form [name=provider]").value; const invoice = provider === "sef";
+  $("#queue-after-create-label").textContent = `${sendButtonLabel(provider)} odmah nakon kreiranja`;
   $("#invoice-fields").hidden = !invoice; $("#invoice-fields").disabled = !invoice;
   $("#despatch-fields").hidden = invoice; $("#despatch-fields").disabled = invoice;
   $$(".invoice-line-field").forEach(field => {
@@ -483,7 +510,7 @@ $("#document-form").addEventListener("submit", async event => {
   if (provider === "sef") Object.assign(payload, {delivery_date:data.delivery_date, due_date:data.due_date, currency:data.currency, payment_account:data.payment_account || null, payment_reference:data.payment_reference || null});
   else Object.assign(payload, {despatch_type:data.despatch_type, shipment_id:data.shipment_id, shipment_method:data.shipment_method, order_reference:data.order_reference || null, planned_despatch_at:new Date(data.planned_despatch_at).toISOString(), actual_despatch_at:new Date(data.actual_despatch_at).toISOString(), planned_delivery_at:new Date(data.planned_delivery_at).toISOString(), despatch_address:{street:data.despatch_street, city:data.despatch_city, postal_code:data.despatch_postal_code, country_code:data.despatch_country_code.toUpperCase()}, delivery_address:{street:data.delivery_street, city:data.delivery_city, postal_code:data.delivery_postal_code, country_code:data.delivery_country_code.toUpperCase()}, gross_weight:data.gross_weight ? Number(data.gross_weight) : null, package_count:data.package_count ? Number(data.package_count) : null, carrier_name:data.carrier_name || null, carrier_tax_id:data.carrier_tax_id || null, carrier_registration_number:data.carrier_registration_number || null, vehicle_plate:data.vehicle_plate || null, driver_name:data.driver_name || null, driver_email:data.driver_email || null});
   const path = editingDocumentId ? `/api/v1/documents/${editingDocumentId}/from-form` : "/api/v1/documents/from-form";
-  try { await api(path, {method:editingDocumentId ? "PUT" : "POST", body:JSON.stringify(payload)}); $("#document-dialog").close(); showToast(editingDocumentId ? "Izmene su sačuvane i XML je ponovo generisan." : (data.queue_after_create ? "Dokument je generisan i dodat u red." : "Dokument i UBL XML su sačuvani.")); editingDocumentId = null; await loadDocuments(); await loadJobs(); } catch (error) { $("#document-error").textContent = error.message; }
+  try { await api(path, {method:editingDocumentId ? "PUT" : "POST", body:JSON.stringify(payload)}); $("#document-dialog").close(); showToast(editingDocumentId ? "Izmene su sačuvane i XML je ponovo generisan." : (data.queue_after_create ? `Dokument je pripremljen i slanje u ${providerDestination(provider)} je pokrenuto.` : "Dokument i UBL XML su sačuvani.")); editingDocumentId = null; await loadDocuments(); await loadJobs(); } catch (error) { $("#document-error").textContent = error.message; }
 });
 
 $("#customer-form").addEventListener("submit", async event => {
@@ -572,4 +599,6 @@ if (invitationToken) {
 }
 
 refreshRequiredMarkers();
+setInterval(autoRefreshActiveView, autoRefreshIntervalMs);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) autoRefreshActiveView(); });
 if (sessionStorage.getItem(tokenKey)) initializeApp();
