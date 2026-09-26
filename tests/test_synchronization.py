@@ -1,11 +1,14 @@
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 from app.models import Direction, DocumentStatus
 from app.synchronization import (
     eot_document_refs,
     internal_status,
     parse_event_datetime,
+    parse_sef_invoice_xml,
     request_status,
+    sef_event_value,
     sef_sync_date,
 )
 
@@ -63,3 +66,59 @@ def test_sef_initial_lookback_is_limited_to_retention_window():
     assert sef_sync_date(
         None, today=date(2026, 9, 24), initial_lookback_days=90
     ) == date(2026, 8, 25)
+
+
+def test_sef_event_fields_support_live_pascal_case_and_documented_camel_case():
+    live_event = {
+        "EventId": 13959255,
+        "PurchaseInvoiceId": 5644067,
+        "NewInvoiceStatus": "New",
+    }
+    documented_event = {"eventId": 7, "purchaseInvoiceId": 8}
+
+    assert sef_event_value(live_event, "eventId") == 13959255
+    assert sef_event_value(live_event, "purchaseInvoiceId") == 5644067
+    assert sef_event_value(live_event, "newInvoiceStatus") == "New"
+    assert sef_event_value(documented_event, "eventId") == 7
+
+
+def test_purchase_invoice_xml_summary_contains_supplier_and_amount():
+    xml = b"""<?xml version="1.0" encoding="utf-8"?>
+    <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+      xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+      xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2">
+      <cbc:ID>UL-2026-001</cbc:ID>
+      <cbc:IssueDate>2026-09-25</cbc:IssueDate>
+      <cbc:DocumentCurrencyCode>RSD</cbc:DocumentCurrencyCode>
+      <cac:AccountingSupplierParty><cac:Party>
+        <cac:PartyName><cbc:Name>Dobavljac DOO</cbc:Name></cac:PartyName>
+        <cac:PartyTaxScheme><cbc:CompanyID>RS109876543</cbc:CompanyID></cac:PartyTaxScheme>
+        <cac:PartyLegalEntity>
+          <cbc:RegistrationName>Dobavljac DOO</cbc:RegistrationName>
+        </cac:PartyLegalEntity>
+      </cac:Party></cac:AccountingSupplierParty>
+      <cac:LegalMonetaryTotal>
+        <cbc:PayableAmount currencyID="RSD">1234.56</cbc:PayableAmount>
+      </cac:LegalMonetaryTotal>
+    </Invoice>"""
+
+    result = parse_sef_invoice_xml(xml, "purchase")
+
+    assert result["document_number"] == "UL-2026-001"
+    assert result["issue_date"] == datetime(2026, 9, 24, 22, tzinfo=UTC)
+    assert result["counterparty_name"] == "Dobavljac DOO"
+    assert result["counterparty_tax_id"] == "109876543"
+    assert result["currency"] == "RSD"
+    assert result["total_amount"] == Decimal("1234.56")
+
+
+def test_purchase_invoice_xml_summary_unwraps_sef_document_envelope():
+    xml = b"""<?xml version="1.0" encoding="utf-8"?>
+    <env:DocumentEnvelope xmlns:env="urn:eFaktura:MinFinrs:envelop:schema"
+      xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+      xmlns:inv="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
+      <env:DocumentHeader><env:PurchaseInvoiceId>42</env:PurchaseInvoiceId></env:DocumentHeader>
+      <env:DocumentBody><inv:Invoice><cbc:ID>UL-42</cbc:ID></inv:Invoice></env:DocumentBody>
+    </env:DocumentEnvelope>"""
+
+    assert parse_sef_invoice_xml(xml, "purchase")["document_number"] == "UL-42"

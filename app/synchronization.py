@@ -3,9 +3,12 @@ from __future__ import annotations
 import hashlib
 import logging
 from collections.abc import AsyncIterator
+from contextlib import suppress
 from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 from uuid import UUID
+from xml.etree import ElementTree as ET
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -34,6 +37,9 @@ logger = logging.getLogger("efakture.sync")
 settings = get_settings()
 artifact_store = LocalArtifactStore(settings.artifact_storage_path, settings.max_artifact_bytes)
 SERBIA = ZoneInfo("Europe/Belgrade")
+CBC = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+CAC = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+INVOICE = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
 
 
 def parse_event_datetime(value: Any) -> datetime | None:
@@ -44,6 +50,74 @@ def parse_event_datetime(value: Any) -> datetime | None:
     except ValueError:
         return None
     return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
+
+
+def sef_event_value(event: dict[str, Any], name: str) -> Any:
+    """Read SEF fields from either documented camelCase or live PascalCase payloads."""
+    if name in event:
+        return event[name]
+    folded_name = name.casefold()
+    return next((value for key, value in event.items() if key.casefold() == folded_name), None)
+
+
+def parse_sef_invoice_xml(
+    content: bytes, direction: Literal["sales", "purchase"]
+) -> dict[str, Any]:
+    """Extract the list fields users need from a downloaded UBL invoice."""
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError:
+        return {}
+    if root.tag != f"{{{INVOICE}}}Invoice":
+        embedded_invoice = root.find(f".//{{{INVOICE}}}Invoice")
+        if embedded_invoice is None:
+            return {}
+        root = embedded_invoice
+
+    def text(path: str) -> str | None:
+        value = root.findtext(path, namespaces={"cbc": CBC, "cac": CAC})
+        return value.strip() if value and value.strip() else None
+
+    party = "AccountingCustomerParty" if direction == "sales" else "AccountingSupplierParty"
+    party_path = f"./cac:{party}/cac:Party"
+    name = text(f"{party_path}/cac:PartyLegalEntity/cbc:RegistrationName") or text(
+        f"{party_path}/cac:PartyName/cbc:Name"
+    )
+    tax_id = text(f"{party_path}/cac:PartyTaxScheme/cbc:CompanyID") or text(
+        f"{party_path}/cbc:EndpointID"
+    )
+    if tax_id and tax_id.upper().startswith("RS") and tax_id[2:].isdigit():
+        tax_id = tax_id[2:]
+
+    issue_date = None
+    raw_issue_date = text("./cbc:IssueDate")
+    if raw_issue_date:
+        with suppress(ValueError):
+            issue_date = datetime.combine(
+                date.fromisoformat(raw_issue_date), time.min, tzinfo=SERBIA
+            ).astimezone(UTC)
+
+    payable = root.find(
+        "./cac:LegalMonetaryTotal/cbc:PayableAmount", {"cbc": CBC, "cac": CAC}
+    )
+    raw_total = payable.text.strip() if payable is not None and payable.text else None
+    try:
+        total_amount = Decimal(raw_total) if raw_total else None
+    except InvalidOperation:
+        total_amount = None
+    currency = text("./cbc:DocumentCurrencyCode")
+    if not currency and payable is not None:
+        currency = payable.attrib.get("currencyID")
+
+    document_number = text("./cbc:ID")
+    return {
+        "document_number": document_number[:100] if document_number else None,
+        "issue_date": issue_date,
+        "counterparty_name": name[:300] if name else None,
+        "counterparty_tax_id": tax_id[:20] if tax_id else None,
+        "currency": currency[:3] if currency else None,
+        "total_amount": total_amount,
+    }
 
 
 def sef_sync_date(
@@ -285,19 +359,21 @@ async def sync_sef_stream(credential_id: UUID, direction: Literal["sales", "purc
             changes = await client.invoice_changes(direction, sync_date)
             imported = 0
             for event in changes:
-                event_id = str(event.get("eventId", ""))
+                event_id = str(sef_event_value(event, "eventId") or "")
                 invoice_key = "salesInvoiceId" if direction == "sales" else "purchaseInvoiceId"
-                invoice_id = event.get(invoice_key)
+                invoice_id = sef_event_value(event, invoice_key)
                 if not event_id or invoice_id is None:
                     continue
+                remote_status = sef_event_value(event, "newInvoiceStatus")
+                event_time = parse_event_datetime(sef_event_value(event, "date"))
                 is_new = await _record_event(
                     db,
                     organization_id=credential.organization_id,
                     provider=Provider.sef,
                     stream=stream,
                     external_event_id=event_id,
-                    event_type=str(event.get("newInvoiceStatus") or "Unknown"),
-                    occurred_at=parse_event_datetime(event.get("date")),
+                    event_type=str(remote_status or "Unknown"),
+                    occurred_at=event_time,
                     request_id=None,
                     data=event,
                 )
@@ -309,12 +385,26 @@ async def sync_sef_stream(credential_id: UUID, direction: Literal["sales", "purc
                     direction=Direction.outbound if direction == "sales" else Direction.inbound,
                     document_type="sales_invoice" if direction == "sales" else "purchase_invoice",
                     document_number=None,
-                    remote_status=event.get("newInvoiceStatus"),
-                    event_time=parse_event_datetime(event.get("date")),
+                    remote_status=remote_status,
+                    event_time=event_time,
                     payload=event,
                 )
-                if created:
+                if created or not document.document_number:
                     xml = await client.invoice_xml(direction, int(invoice_id))
+                    summary = parse_sef_invoice_xml(xml, direction)
+                    document.document_number = (
+                        summary.get("document_number") or document.document_number
+                    )
+                    document.issue_date = summary.get("issue_date") or document.issue_date
+                    document.counterparty_name = (
+                        summary.get("counterparty_name") or document.counterparty_name
+                    )
+                    document.counterparty_tax_id = (
+                        summary.get("counterparty_tax_id") or document.counterparty_tax_id
+                    )
+                    document.currency = summary.get("currency") or document.currency
+                    if summary.get("total_amount") is not None:
+                        document.total_amount = summary["total_amount"]
                     await _store_remote_xml(
                         db,
                         document=document,
