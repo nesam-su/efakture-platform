@@ -20,7 +20,7 @@ def test_frontend_uses_provider_specific_send_labels():
     assert 'return provider === "sef" ? "SEF" : "eOtpremnice"' in script
     assert "Pošalji u red" not in script
     assert "Pošalji u red" not in template
-    assert '/static/app.js?v=0.8.14' in template
+    assert '/static/app.js?v=0.8.15' in template
 
 
 def test_frontend_separates_inbound_and_outbound_invoices_in_sidebar():
@@ -49,14 +49,19 @@ def test_frontend_separates_inbound_and_outbound_invoices_in_sidebar():
 def test_print_layout_has_professional_invoice_sections():
     script = (PROJECT_ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
 
-    assert '@page{size:A4' in script
+    print_styles = (PROJECT_ROOT / "app" / "static" / "print.css").read_text(
+        encoding="utf-8"
+    )
+
+    assert '@page { size: A4' in print_styles
     assert 'class="document-header"' in script
     assert 'class="parties"' in script
     assert 'Pregled PDV-a' in script
     assert 'UKUPNO ZA PLAĆANJE' in script
     assert 'Podaci za plaćanje' in script
-    assert 'print-color-adjust:exact' in script
-    assert 'thead{display:table-header-group}' in script
+    assert 'print-color-adjust: exact' in print_styles
+    assert 'thead { display: table-header-group; }' in print_styles
+    assert '/static/print.css?v=0.8.15' in script
     assert 'id="print-detail">Pregled štampe</button>' in script
     assert 'class="print-toolbar"' in script
     assert 'id="print-now"' in script
