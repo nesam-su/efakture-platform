@@ -6,8 +6,8 @@
   <meta name="color-scheme" content="light">
   <title>eDokumenti</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/app.css?v=0.8.10">
-  <link rel="stylesheet" href="/static/security.css?v=0.8.10">
+  <link rel="stylesheet" href="/static/app.css?v=0.8.11">
+  <link rel="stylesheet" href="/static/security.css?v=0.8.11">
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -42,13 +42,9 @@
     <aside class="sidebar">
       <div class="brand"><span class="brand-mark">eD</span><strong>eDokumenti</strong></div>
       <nav aria-label="Glavna navigacija">
-        <div class="nav-group" id="document-navigation">
-          <button class="nav-item active" data-view="documents" data-document-scope="all"><span>▦</span>Dokumenti</button>
-          <div class="nav-subitems" aria-label="Vrsta fakture">
-            <button class="nav-subitem" data-document-scope="inbound"><span>↓</span><span>Ulazne fakture</span><strong id="inbound-document-count">0</strong></button>
-            <button class="nav-subitem" data-document-scope="outbound"><span>↑</span><span>Izlazne fakture</span><strong id="outbound-document-count">0</strong></button>
-          </div>
-        </div>
+        <button class="nav-item active" data-view="documents" data-document-scope="inbound"><span>↓</span><span class="nav-label">Ulazne fakture</span><strong class="nav-count" id="inbound-document-count">0</strong></button>
+        <button class="nav-item" data-view="documents" data-document-scope="outbound"><span>↑</span><span class="nav-label">Izlazne fakture</span><strong class="nav-count" id="outbound-document-count">0</strong></button>
+        <button class="nav-item" data-view="documents" data-document-scope="despatch"><span>⇄</span><span class="nav-label">Otpremnice</span><strong class="nav-count" id="despatch-document-count">0</strong></button>
         <button class="nav-item" data-view="customers"><span>♧</span>Kupci</button>
         <button class="nav-item" data-view="catalog"><span>▤</span>Artikli</button>
         <button class="nav-item" data-view="jobs"><span>↻</span>Poslovi</button>
@@ -200,6 +196,6 @@
       <div class="dialog-actions"><button class="primary" type="submit">Promeni lozinku</button></div>
     </form>
   </dialog>
-  <script src="/static/app.js?v=0.8.10" defer></script>
+  <script src="/static/app.js?v=0.8.11" defer></script>
 </body>
 </html>

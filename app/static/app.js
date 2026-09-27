@@ -2,7 +2,7 @@ const tokenKey = "edokumenti_access_token";
 const organizationKey = "edokumenti_organization_id";
 const documentScopeKey = "edokumenti_document_scope";
 const savedDocumentScope = sessionStorage.getItem(documentScopeKey);
-const state = {organizations: [], organization: null, documents: [], customers: [], items: [], jobs: [], events: [], members: [], sessions: [], integrations: [], documentScope: ["all", "inbound", "outbound"].includes(savedDocumentScope) ? savedDocumentScope : "all"};
+const state = {organizations: [], organization: null, documents: [], customers: [], items: [], jobs: [], events: [], members: [], sessions: [], integrations: [], documentScope: ["inbound", "outbound", "despatch"].includes(savedDocumentScope) ? savedDocumentScope : "inbound"};
 const autoRefreshIntervalMs = 5000;
 let autoRefreshBusy = false;
 
@@ -46,6 +46,7 @@ function formatAmount(value, currency = "RSD") {
 }
 
 const statusNames = {draft:"Nacrt",queued:"Na čekanju",sent:"Poslato",delivered:"Isporučeno",accepted:"Prihvaćeno",rejected:"Odbijeno",cancelled:"Stornirano",error:"Greška",running:"U toku",retrying:"Ponovni pokušaj",succeeded:"Uspešno",failed:"Neuspešno"};
+const remoteStatusNames = {new:"Novo",seen:"Pregledano",renotified:"Ponovo obavešteno",approved:"Odobreno",accepted:"Prihvaćeno",rejected:"Odbijeno",cancelled:"Otkazano",canceled:"Otkazano",storno:"Stornirano",sent:"Poslato",received:"Primljeno",paid:"Plaćeno",mistake:"Greška",overdue:"Dospelo",archived:"Arhivirano",sending:"Slanje",sendinginprogress:"Slanje u toku",deleted:"Obrisano",unknown:"Nepoznato",fulfilled:"Realizovano",delivered:"Isporučeno",deliveryconfirmed:"Isporuka potvrđena",transportationstarted:"Prevoz započet"};
 const roleNames = {owner:"Vlasnik",admin:"Administrator",accountant:"Knjigovođa",operator:"Operater",viewer:"Pregled"};
 const documentTypeNames = {sales_invoice:"Izlazna faktura",purchase_invoice:"Ulazna faktura",despatch_advice:"Otpremnica",receipt_advice:"Prijemnica"};
 const unitNames = {H87:"Komad",KGM:"Kilogram",LTR:"Litar",MTR:"Metar",MTK:"m²",MTQ:"m³",HUR:"Sat",DAY:"Dan",XPK:"Paket"};
@@ -57,6 +58,17 @@ function providerDestination(provider) {
 
 function sendButtonLabel(provider) {
   return `Pošalji u ${providerDestination(provider)}`;
+}
+
+function remoteStatusName(value) {
+  if (!value) return "";
+  return remoteStatusNames[String(value).replace(/[^a-z]/gi, "").toLowerCase()] || value;
+}
+
+function documentStatusName(doc) {
+  if (doc.document_type === "purchase_invoice" && doc.status === "sent") return "Primljena";
+  if (doc.document_type === "sales_invoice" && doc.status === "sent") return "Poslata";
+  return statusNames[doc.status] || doc.status;
 }
 
 function showToast(message, error = false) {
@@ -172,34 +184,33 @@ async function loadDocuments() {
 function renderDocuments() {
   const search = $("#document-search").value.trim().toLowerCase();
   const providerFilter = $("#provider-filter");
-  const invoiceScope = state.documentScope !== "all";
-  if (invoiceScope) providerFilter.value = "sef";
-  providerFilter.disabled = invoiceScope;
+  providerFilter.value = state.documentScope === "despatch" ? "eotpremnice" : "sef";
+  providerFilter.disabled = true;
   const provider = providerFilter.value;
   const status = $("#status-filter").value;
   const scoped = state.documents.filter(doc => {
     if (state.documentScope === "inbound") return doc.provider === "sef" && doc.direction === "inbound" && doc.document_type === "purchase_invoice";
     if (state.documentScope === "outbound") return doc.provider === "sef" && doc.direction === "outbound" && doc.document_type === "sales_invoice";
-    return true;
+    return doc.provider === "eotpremnice";
   });
   const filtered = scoped.filter(doc => {
     const text = `${doc.document_number || ""} ${doc.counterparty_name || ""} ${doc.counterparty_tax_id || ""}`.toLowerCase();
     return (!search || text.includes(search)) && (!provider || doc.provider === provider) && (!status || doc.status === status);
   });
   const headings = {
-    all: ["Pregled dokumenata", "SEF fakture i eOtpremnice iz svih aktivnih tokova."],
-    inbound: ["Ulazne fakture", "Fakture dobavljača automatski preuzete sa SEF-a."],
-    outbound: ["Izlazne fakture", "Fakture kupcima kreirane i poslate kroz SEF."],
+    inbound: ["Primljene fakture", "Fakture dobavljača automatski preuzete sa SEF-a."],
+    outbound: ["Poslate fakture", "Fakture kupcima kreirane i poslate kroz SEF."],
+    despatch: ["Otpremnice", "Ulazne i izlazne eOtpremnice u jednom pregledu."],
   };
   $("#documents-heading").textContent = headings[state.documentScope][0];
   $("#documents-description").textContent = headings[state.documentScope][1];
   $("#document-rows").innerHTML = filtered.map(doc => `<tr>
-    <td><strong>${escapeHtml(doc.document_number || documentTypeNames[doc.document_type] || doc.document_type)}</strong><small>${escapeHtml(documentTypeNames[doc.document_type] || doc.document_type)} · ${doc.direction === "outbound" ? "izlazni" : "ulazni"}</small></td>
+    <td><strong>${escapeHtml(doc.document_number || documentTypeNames[doc.document_type] || doc.document_type)}</strong><small>${escapeHtml(documentTypeNames[doc.document_type] || doc.document_type)} · ${doc.document_type === "purchase_invoice" ? "primljena" : doc.document_type === "sales_invoice" ? "poslata" : doc.direction === "outbound" ? "izlazna" : "ulazna"}</small></td>
     <td><span class="service ${doc.provider}">${doc.provider === "sef" ? "SEF" : "eOtpremnice"}</span></td>
     <td><strong>${escapeHtml(doc.counterparty_name || "—")}</strong><small>${escapeHtml(doc.counterparty_tax_id || "")}</small></td>
     <td>${formatDate(doc.issue_date || doc.created_at)}</td><td>${formatAmount(doc.total_amount, doc.currency)}</td>
-    <td><span class="status ${doc.status}">${escapeHtml(statusNames[doc.status] || doc.status)}</span><small>${escapeHtml(doc.remote_status || "")}</small></td>
-    <td><button class="row-action" data-document-id="${doc.id}">Detalji</button></td></tr>`).join("");
+    <td><span class="status ${doc.status}">${escapeHtml(documentStatusName(doc))}</span><small>${escapeHtml(remoteStatusName(doc.remote_status))}</small></td>
+    <td><button class="row-action" data-document-id="${doc.id}">Otvori</button></td></tr>`).join("");
   $("#documents-empty").hidden = filtered.length > 0;
   $("#metric-total").textContent = scoped.length;
   $("#metric-active").textContent = scoped.filter(doc => ["queued", "sent"].includes(doc.status)).length;
@@ -207,6 +218,7 @@ function renderDocuments() {
   $("#metric-errors").textContent = scoped.filter(doc => ["rejected", "error"].includes(doc.status)).length;
   $("#inbound-document-count").textContent = state.documents.filter(doc => doc.provider === "sef" && doc.direction === "inbound" && doc.document_type === "purchase_invoice").length;
   $("#outbound-document-count").textContent = state.documents.filter(doc => doc.provider === "sef" && doc.direction === "outbound" && doc.document_type === "sales_invoice").length;
+  $("#despatch-document-count").textContent = state.documents.filter(doc => doc.provider === "eotpremnice").length;
   $$("[data-document-scope]").forEach(item => item.classList.toggle("scope-active", item.dataset.documentScope === state.documentScope));
   $$("[data-document-id]").forEach(button => button.addEventListener("click", () => showDocument(button.dataset.documentId)));
 }
@@ -269,6 +281,107 @@ function openItemDialog(item = null) {
   $("#item-error").textContent = ""; $("#item-dialog").showModal();
 }
 
+function xmlElement(node, localName) {
+  return node ? [...node.getElementsByTagNameNS("*", localName)][0] || null : null;
+}
+
+function xmlText(node, localName) {
+  return xmlElement(node, localName)?.textContent?.trim() || "";
+}
+
+function xmlParty(root, roleNames) {
+  const wrapper = roleNames.map(name => xmlElement(root, name)).find(Boolean);
+  if (!wrapper) return {name:"—", taxId:"", address:""};
+  const name = xmlText(xmlElement(wrapper, "PartyLegalEntity"), "RegistrationName") || xmlText(xmlElement(wrapper, "PartyName"), "Name") || "—";
+  let taxId = xmlText(wrapper, "EndpointID") || xmlText(xmlElement(wrapper, "PartyTaxScheme"), "CompanyID");
+  if (/^RS\d+$/i.test(taxId)) taxId = taxId.slice(2);
+  const addressNode = xmlElement(wrapper, "PostalAddress") || xmlElement(wrapper, "DeliveryAddress") || xmlElement(wrapper, "DespatchAddress");
+  const address = [xmlText(addressNode, "StreetName"), xmlText(addressNode, "PostalZone"), xmlText(addressNode, "CityName")].filter(Boolean).join(", ");
+  return {name, taxId, address};
+}
+
+function parseBusinessXml(xmlSource, doc) {
+  const parsed = new DOMParser().parseFromString(xmlSource, "application/xml");
+  if (parsed.getElementsByTagName("parsererror").length) throw new Error("XML dokument nije moguće prikazati");
+  const root = ["Invoice", "DespatchAdvice", "ReceiptAdvice"].map(name => parsed.documentElement.localName === name ? parsed.documentElement : xmlElement(parsed, name)).find(Boolean);
+  if (!root) throw new Error("Format dokumenta nije podržan za pregled");
+  const invoice = root.localName === "Invoice";
+  const issuer = xmlParty(root, invoice ? ["AccountingSupplierParty"] : ["DespatchSupplierParty", "DeliveryCustomerParty"]);
+  const recipient = xmlParty(root, invoice ? ["AccountingCustomerParty"] : ["DeliveryCustomerParty", "DespatchSupplierParty"]);
+  const lineName = invoice ? "InvoiceLine" : "DespatchLine";
+  const lines = [...root.getElementsByTagNameNS("*", lineName)].map((line, index) => {
+    const quantityNode = xmlElement(line, invoice ? "InvoicedQuantity" : "DeliveredQuantity");
+    const quantity = quantityNode?.textContent?.trim() || "";
+    return {
+      number: xmlText(line, "ID") || String(index + 1),
+      name: xmlText(xmlElement(line, "Item"), "Name") || "Stavka",
+      description: xmlText(xmlElement(line, "Item"), "Description"),
+      quantity,
+      unit: quantityNode?.getAttribute("unitCode") || "",
+      unitPrice: xmlText(xmlElement(line, "Price"), "PriceAmount"),
+      netAmount: xmlText(line, "LineExtensionAmount"),
+      vatRate: xmlText(xmlElement(line, "ClassifiedTaxCategory"), "Percent"),
+    };
+  });
+  return {
+    number: xmlText(root, "ID") || doc.document_number || "—",
+    issueDate: xmlText(root, "IssueDate") || doc.issue_date,
+    dueDate: xmlText(root, "DueDate"),
+    currency: xmlText(root, "DocumentCurrencyCode") || doc.currency || "RSD",
+    issuer,
+    recipient,
+    lines,
+    total: xmlText(xmlElement(root, "LegalMonetaryTotal"), "PayableAmount") || doc.total_amount,
+    note: xmlText(root, "Note"),
+  };
+}
+
+function previewFromStoredForm(doc) {
+  const form = doc.payload?.form;
+  if (!form) return null;
+  const profile = state.organization?.profile || {};
+  const customer = form.customer || {};
+  return {
+    number: form.document_number || doc.document_number || "—",
+    issueDate: form.issue_date || doc.issue_date,
+    dueDate: form.due_date || form.planned_delivery_at || "",
+    currency: form.currency || doc.currency || "RSD",
+    issuer: {name:state.organization?.name || "—", taxId:state.organization?.tax_id || "", address:[profile.street, profile.postal_code, profile.city].filter(Boolean).join(", ")},
+    recipient: {name:customer.name || doc.counterparty_name || "—", taxId:customer.tax_id || doc.counterparty_tax_id || "", address:customer.address ? [customer.address.street, customer.address.postal_code, customer.address.city].filter(Boolean).join(", ") : ""},
+    lines: (form.lines || []).map((line, index) => ({number:String(index + 1), name:line.name || "Stavka", description:line.description || "", quantity:line.quantity, unit:line.unit_code || "", unitPrice:line.unit_price, netAmount:Number(line.quantity || 0) * Number(line.unit_price || 0), vatRate:line.vat_rate})),
+    total: doc.total_amount,
+    note: form.note || "",
+  };
+}
+
+async function loadDocumentPreview(doc, artifacts) {
+  const stored = previewFromStoredForm(doc);
+  if (stored) return stored;
+  const xmlArtifact = [...artifacts].reverse().find(file => ["application/xml", "text/xml"].includes(file.content_type));
+  if (xmlArtifact) {
+    try {
+      const response = await api(`/api/v1/documents/${doc.id}/artifacts/${xmlArtifact.id}/download`);
+      return parseBusinessXml(await response.text(), doc);
+    } catch (error) { showToast(error.message, true); }
+  }
+  const organization = state.organization || {};
+  const counterparty = {name:doc.counterparty_name || "—", taxId:doc.counterparty_tax_id || "", address:""};
+  const own = {name:organization.name || "—", taxId:organization.tax_id || "", address:""};
+  return {number:doc.document_number || "—",issueDate:doc.issue_date,currency:doc.currency || "RSD",issuer:doc.direction === "inbound" ? counterparty : own,recipient:doc.direction === "inbound" ? own : counterparty,lines:[],total:doc.total_amount,note:""};
+}
+
+function documentPreviewMarkup(preview) {
+  const lines = preview.lines.length ? `<div class="preview-lines"><table><thead><tr><th>R.br.</th><th>Artikal / usluga</th><th>Količina</th><th>Cena</th><th>PDV</th><th>Iznos</th></tr></thead><tbody>${preview.lines.map(line => `<tr><td>${escapeHtml(line.number)}</td><td><strong>${escapeHtml(line.name)}</strong><small>${escapeHtml(line.description)}</small></td><td>${escapeHtml(line.quantity)} ${escapeHtml(unitNames[line.unit] || line.unit)}</td><td>${line.unitPrice === "" || line.unitPrice == null ? "—" : formatAmount(line.unitPrice, preview.currency)}</td><td>${line.vatRate === "" || line.vatRate == null ? "—" : `${escapeHtml(line.vatRate)}%`}</td><td>${line.netAmount === "" || line.netAmount == null ? "—" : formatAmount(line.netAmount, preview.currency)}</td></tr>`).join("")}</tbody></table></div>` : '<p class="muted">Dokument nema stavke dostupne za prikaz.</p>';
+  return `<section class="document-preview"><div class="detail-grid"><div class="detail-item"><span>Datum dokumenta</span><strong>${formatDate(preview.issueDate)}</strong></div><div class="detail-item"><span>Datum dospeća / isporuke</span><strong>${formatDate(preview.dueDate)}</strong></div></div><div class="preview-parties"><div class="preview-party"><span>Izdavalac / pošiljalac</span><strong>${escapeHtml(preview.issuer.name)}</strong><small>PIB: ${escapeHtml(preview.issuer.taxId || "—")}</small><small>${escapeHtml(preview.issuer.address)}</small></div><div class="preview-party"><span>Primalac</span><strong>${escapeHtml(preview.recipient.name)}</strong><small>PIB: ${escapeHtml(preview.recipient.taxId || "—")}</small><small>${escapeHtml(preview.recipient.address)}</small></div></div><h3>Stavke dokumenta</h3>${lines}<div class="detail-grid"><div class="detail-item"><span>Ukupno za plaćanje</span><strong>${formatAmount(preview.total, preview.currency)}</strong></div><div class="detail-item"><span>Valuta</span><strong>${escapeHtml(preview.currency || "—")}</strong></div></div>${preview.note ? `<p class="preview-note"><strong>Napomena:</strong> ${escapeHtml(preview.note)}</p>` : ""}</section>`;
+}
+
+function printDocument(doc, preview) {
+  const popup = window.open("", "_blank", "width=1000,height=760");
+  if (!popup) { showToast("Pregledač je blokirao prozor za štampu.", true); return; }
+  popup.document.write(`<!doctype html><html lang="sr-Latn"><head><meta charset="utf-8"><title>${escapeHtml(preview.number)}</title><style>body{font:14px Arial,sans-serif;color:#111;margin:28px}h1{margin:0 0 6px}small{color:#555}.meta,.parties{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:22px 0}.box{border:1px solid #bbb;padding:12px}.box span,.box strong,.box small{display:block}table{width:100%;border-collapse:collapse;margin:20px 0}th,td{border:1px solid #bbb;padding:8px;text-align:left}th{background:#eee}.total{text-align:right;font-size:18px;font-weight:bold}@media print{body{margin:12mm}}</style></head><body><h1>${escapeHtml(doc.document_type === "despatch_advice" ? "Otpremnica" : "Faktura")} ${escapeHtml(preview.number)}</h1><small>${escapeHtml(doc.provider === "sef" ? "SEF" : "eOtpremnice")} · ${escapeHtml(documentStatusName(doc))}</small><div class="meta"><div class="box"><span>Datum</span><strong>${formatDate(preview.issueDate)}</strong></div><div class="box"><span>Valuta</span><strong>${escapeHtml(preview.currency || "—")}</strong></div></div><div class="parties"><div class="box"><span>Izdavalac / pošiljalac</span><strong>${escapeHtml(preview.issuer.name)}</strong><small>PIB: ${escapeHtml(preview.issuer.taxId || "—")}</small><small>${escapeHtml(preview.issuer.address)}</small></div><div class="box"><span>Primalac</span><strong>${escapeHtml(preview.recipient.name)}</strong><small>PIB: ${escapeHtml(preview.recipient.taxId || "—")}</small><small>${escapeHtml(preview.recipient.address)}</small></div></div>${preview.lines.length ? `<table><thead><tr><th>R.br.</th><th>Stavka</th><th>Količina</th><th>Cena</th><th>PDV</th><th>Iznos</th></tr></thead><tbody>${preview.lines.map(line => `<tr><td>${escapeHtml(line.number)}</td><td>${escapeHtml(line.name)}</td><td>${escapeHtml(line.quantity)} ${escapeHtml(unitNames[line.unit] || line.unit)}</td><td>${line.unitPrice === "" || line.unitPrice == null ? "—" : formatAmount(line.unitPrice, preview.currency)}</td><td>${line.vatRate === "" || line.vatRate == null ? "—" : `${escapeHtml(line.vatRate)}%`}</td><td>${line.netAmount === "" || line.netAmount == null ? "—" : formatAmount(line.netAmount, preview.currency)}</td></tr>`).join("")}</tbody></table>` : ""}<p class="total">Ukupno: ${formatAmount(preview.total, preview.currency)}</p>${preview.note ? `<p><strong>Napomena:</strong> ${escapeHtml(preview.note)}</p>` : ""}</body></html>`);
+  popup.document.close(); popup.focus(); setTimeout(() => popup.print(), 200);
+}
+
 async function showDocument(documentId) {
   const doc = state.documents.find(item => item.id === documentId);
   if (!doc) return;
@@ -276,14 +389,18 @@ async function showDocument(documentId) {
   const deletable = canEdit() && doc.direction === "outbound" && doc.status === "draft" && !doc.external_id;
   let artifacts = [];
   try { artifacts = await api(`/api/v1/documents/${documentId}/artifacts`); } catch (error) { showToast(error.message, true); }
+  const preview = await loadDocumentPreview(doc, artifacts);
+  const sortedArtifacts = [...artifacts].sort((left, right) => Number(["application/xml", "text/xml"].includes(left.content_type)) - Number(["application/xml", "text/xml"].includes(right.content_type)));
   $("#document-detail").innerHTML = `<div class="dialog-heading"><div><p class="eyebrow">DETALJI DOKUMENTA</p><h2>${escapeHtml(doc.document_number || documentTypeNames[doc.document_type] || doc.document_type)}</h2></div><button class="icon-button" id="close-detail" aria-label="Zatvori">×</button></div>
-    <span class="status ${doc.status}">${escapeHtml(statusNames[doc.status] || doc.status)}</span>
-    <div class="detail-grid"><div class="detail-item"><span>Servis</span><strong>${doc.provider === "sef" ? "SEF" : "eOtpremnice"}</strong></div><div class="detail-item"><span>Udaljeni status</span><strong>${escapeHtml(doc.remote_status || "—")}</strong></div><div class="detail-item"><span>Partner</span><strong>${escapeHtml(doc.counterparty_name || "—")}</strong></div><div class="detail-item"><span>Iznos</span><strong>${formatAmount(doc.total_amount, doc.currency)}</strong></div></div>
-    <h3>Prilozi</h3><div class="artifact-list">${artifacts.length ? artifacts.map(file => `<div class="artifact"><div><strong>${escapeHtml(file.kind)}</strong><small>${Math.ceil(file.size_bytes / 1024)} KB · ${escapeHtml(file.sha256.slice(0, 12))}…</small></div><button class="secondary artifact-download" data-artifact-id="${file.id}">Preuzmi</button></div>`).join("") : '<p class="muted">Nema priloga.</p>'}</div>
+    <span class="status ${doc.status}">${escapeHtml(documentStatusName(doc))}</span>
+    <div class="detail-grid"><div class="detail-item"><span>Servis</span><strong>${doc.provider === "sef" ? "SEF" : "eOtpremnice"}</strong></div><div class="detail-item"><span>Status servisa</span><strong>${escapeHtml(remoteStatusName(doc.remote_status) || "—")}</strong></div></div>
+    ${documentPreviewMarkup(preview)}
     ${doc.last_error ? `<p class="form-error">${escapeHtml(doc.last_error)}</p>` : ""}
-    <div class="dialog-actions">${deletable ? '<button class="danger-button" id="delete-detail">Obriši nacrt</button>' : ""}<button class="secondary" id="close-detail-bottom">Zatvori</button>${editable ? '<button class="secondary" id="edit-detail">Izmeni</button>' : ""}${canEdit() && doc.direction === "outbound" && doc.status === "draft" ? `<button class="primary" id="queue-detail">${sendButtonLabel(doc.provider)}</button>` : ""}</div>`;
+    <section class="technical-files"><h3>Tehničke datoteke</h3><p class="muted small">XML je namenjen razmeni sa državnim servisom i nije potreban za svakodnevni pregled.</p><div class="artifact-list">${sortedArtifacts.length ? sortedArtifacts.map(file => `<div class="artifact"><div><strong>${["application/xml", "text/xml"].includes(file.content_type) ? "XML dokument" : file.content_type === "application/pdf" ? "PDF dokument" : escapeHtml(file.kind)}</strong><small>${Math.ceil(file.size_bytes / 1024)} KB · ${escapeHtml(file.sha256.slice(0, 12))}…</small></div><button class="secondary artifact-download" data-artifact-id="${file.id}">Preuzmi ${["application/xml", "text/xml"].includes(file.content_type) ? "XML" : "datoteku"}</button></div>`).join("") : '<p class="muted">Nema tehničkih datoteka.</p>'}</div></section>
+    <div class="dialog-actions">${deletable ? '<button class="danger-button" id="delete-detail">Obriši nacrt</button>' : ""}<button class="secondary" id="close-detail-bottom">Zatvori</button><button class="secondary" id="print-detail">Štampaj</button>${editable ? '<button class="secondary" id="edit-detail">Izmeni</button>' : ""}${canEdit() && doc.direction === "outbound" && doc.status === "draft" ? `<button class="primary" id="queue-detail">${sendButtonLabel(doc.provider)}</button>` : ""}</div>`;
   const dialog = $("#detail-dialog"); dialog.showModal();
   $("#close-detail").onclick = () => dialog.close(); $("#close-detail-bottom").onclick = () => dialog.close();
+  $("#print-detail").onclick = () => printDocument(doc, preview);
   const queue = $("#queue-detail"); if (queue) queue.onclick = async () => { try { await api(`/api/v1/documents/${doc.id}/queue`, {method:"POST"}); dialog.close(); showToast(`Slanje u ${providerDestination(doc.provider)} je pokrenuto.`); await loadDocuments(); await loadJobs(); } catch (error) { showToast(error.message, true); } };
   const edit = $("#edit-detail"); if (edit) edit.onclick = () => openDocumentEditor(doc);
   const remove = $("#delete-detail"); if (remove) remove.onclick = async () => {
@@ -360,14 +477,13 @@ $("#organization-profile-form").addEventListener("submit", async event => {
 
 function showView(name) {
   $$(".view").forEach(view => view.classList.toggle("active", view.id === `view-${name}`));
-  $$(".nav-item[data-view]").forEach(item => item.classList.toggle("active", item.dataset.view === name));
+  $$(".nav-item[data-view]").forEach(item => item.classList.toggle("active", item.dataset.view === name && (name !== "documents" || item.dataset.documentScope === state.documentScope)));
   $(".sidebar").classList.remove("open");
 }
 
 function showDocumentScope(scope) {
   state.documentScope = scope;
   sessionStorage.setItem(documentScopeKey, scope);
-  if (scope === "all") $("#provider-filter").value = "";
   showView("documents");
   renderDocuments();
 }
@@ -670,8 +786,7 @@ $("#refresh-button").onclick = async () => { await loadWorkspace(); showToast("P
 $("#logout").onclick = async () => { try { await api("/api/v1/auth/logout", {method:"POST", tenant:false}); } finally { clearSession(); } };
 $("#menu-button").onclick = () => $(".sidebar").classList.toggle("open");
 $$('.close-dialog').forEach(button => button.onclick = () => button.closest("dialog").close());
-$$('.nav-item[data-view]').forEach(button => button.onclick = () => button.dataset.view === "documents" ? showDocumentScope("all") : showView(button.dataset.view));
-$$('.nav-subitem[data-document-scope]').forEach(button => button.onclick = () => showDocumentScope(button.dataset.documentScope));
+$$('.nav-item[data-view]').forEach(button => button.onclick = () => button.dataset.documentScope ? showDocumentScope(button.dataset.documentScope) : showView(button.dataset.view));
 [$("#document-search"), $("#provider-filter"), $("#status-filter")].forEach(control => control.addEventListener("input", renderDocuments));
 $("#customer-search").addEventListener("input", renderCustomers);
 $("#item-search").addEventListener("input", renderCatalogItems);
