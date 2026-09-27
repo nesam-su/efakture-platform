@@ -20,7 +20,7 @@ def test_frontend_uses_provider_specific_send_labels():
     assert 'return provider === "sef" ? "SEF" : "eOtpremnice"' in script
     assert "Pošalji u red" not in script
     assert "Pošalji u red" not in template
-    assert '/static/app.js?v=0.8.16' in template
+    assert '/static/app.js?v=0.8.17' in template
 
 
 def test_frontend_separates_inbound_and_outbound_invoices_in_sidebar():
@@ -61,7 +61,11 @@ def test_print_layout_has_professional_invoice_sections():
     assert 'Podaci za plaćanje' in script
     assert 'print-color-adjust: exact' in print_styles
     assert 'thead { display: table-header-group; }' in print_styles
-    assert '/static/print.css?v=0.8.16' in script
+    assert '/static/print.css?v=0.8.17' in script
+    assert (
+        ".party:first-child { border-right: 0; border-bottom: 0; border-left: 0; }"
+        in print_styles
+    )
     assert 'id="print-detail"' not in script
     assert 'showPrintPreview(button.dataset.printDocumentId)' in script
     assert 'function printDocument(doc, preview, existingPopup = null)' in script

@@ -95,6 +95,7 @@ h2 { margin-bottom: 8px; color: var(--accent-dark); font-size: 10pt; text-transf
 
 .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
 .party { min-height: 30mm; padding: 10px; border: 1px solid var(--line); border-top: 4px solid var(--accent); }
+.party:first-child { border-right: 0; border-bottom: 0; border-left: 0; }
 .party strong { display: block; margin: 4px 0; font-size: 12pt; }
 .party small { display: block; margin-top: 2px; color: var(--muted); }
 
