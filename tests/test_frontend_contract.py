@@ -20,7 +20,22 @@ def test_frontend_uses_provider_specific_send_labels():
     assert 'return provider === "sef" ? "SEF" : "eOtpremnice"' in script
     assert "Pošalji u red" not in script
     assert "Pošalji u red" not in template
-    assert '/static/app.js?v=0.8.9' in template
+    assert '/static/app.js?v=0.8.10' in template
+
+
+def test_frontend_separates_inbound_and_outbound_invoices_in_sidebar():
+    script = (PROJECT_ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
+    template = (PROJECT_ROOT / "app" / "templates" / "index.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'data-document-scope="inbound"' in template
+    assert 'data-document-scope="outbound"' in template
+    assert "Ulazne fakture" in template
+    assert "Izlazne fakture" in template
+    assert 'doc.document_type === "purchase_invoice"' in script
+    assert 'doc.document_type === "sales_invoice"' in script
+    assert 'showDocumentScope(button.dataset.documentScope)' in script
 
 
 def test_carrier_fields_are_required_for_external_carrier_transport():

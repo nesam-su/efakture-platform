@@ -6,8 +6,8 @@
   <meta name="color-scheme" content="light">
   <title>eDokumenti</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/app.css?v=0.8.9">
-  <link rel="stylesheet" href="/static/security.css?v=0.8.9">
+  <link rel="stylesheet" href="/static/app.css?v=0.8.10">
+  <link rel="stylesheet" href="/static/security.css?v=0.8.10">
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -42,7 +42,13 @@
     <aside class="sidebar">
       <div class="brand"><span class="brand-mark">eD</span><strong>eDokumenti</strong></div>
       <nav aria-label="Glavna navigacija">
-        <button class="nav-item active" data-view="documents"><span>▦</span>Dokumenti</button>
+        <div class="nav-group" id="document-navigation">
+          <button class="nav-item active" data-view="documents" data-document-scope="all"><span>▦</span>Dokumenti</button>
+          <div class="nav-subitems" aria-label="Vrsta fakture">
+            <button class="nav-subitem" data-document-scope="inbound"><span>↓</span><span>Ulazne fakture</span><strong id="inbound-document-count">0</strong></button>
+            <button class="nav-subitem" data-document-scope="outbound"><span>↑</span><span>Izlazne fakture</span><strong id="outbound-document-count">0</strong></button>
+          </div>
+        </div>
         <button class="nav-item" data-view="customers"><span>♧</span>Kupci</button>
         <button class="nav-item" data-view="catalog"><span>▤</span>Artikli</button>
         <button class="nav-item" data-view="jobs"><span>↻</span>Poslovi</button>
@@ -65,7 +71,7 @@
 
       <main class="content">
         <section class="view active" id="view-documents">
-          <div class="page-heading"><div><p class="eyebrow">POSLOVNI DOKUMENTI</p><h1>Pregled dokumenata</h1><p class="muted">SEF fakture i eOtpremnice iz svih aktivnih tokova.</p></div></div>
+          <div class="page-heading"><div><p class="eyebrow">POSLOVNI DOKUMENTI</p><h1 id="documents-heading">Pregled dokumenata</h1><p class="muted" id="documents-description">SEF fakture i eOtpremnice iz svih aktivnih tokova.</p></div></div>
           <div class="metric-grid">
             <article class="metric"><span>Ukupno</span><strong id="metric-total">0</strong><small>učitanih dokumenata</small></article>
             <article class="metric"><span>U obradi</span><strong id="metric-active">0</strong><small>na čekanju ili poslato</small></article>
@@ -194,6 +200,6 @@
       <div class="dialog-actions"><button class="primary" type="submit">Promeni lozinku</button></div>
     </form>
   </dialog>
-  <script src="/static/app.js?v=0.8.9" defer></script>
+  <script src="/static/app.js?v=0.8.10" defer></script>
 </body>
 </html>

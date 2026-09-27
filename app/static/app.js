@@ -1,6 +1,8 @@
 const tokenKey = "edokumenti_access_token";
 const organizationKey = "edokumenti_organization_id";
-const state = {organizations: [], organization: null, documents: [], customers: [], items: [], jobs: [], events: [], members: [], sessions: [], integrations: []};
+const documentScopeKey = "edokumenti_document_scope";
+const savedDocumentScope = sessionStorage.getItem(documentScopeKey);
+const state = {organizations: [], organization: null, documents: [], customers: [], items: [], jobs: [], events: [], members: [], sessions: [], integrations: [], documentScope: ["all", "inbound", "outbound"].includes(savedDocumentScope) ? savedDocumentScope : "all"};
 const autoRefreshIntervalMs = 5000;
 let autoRefreshBusy = false;
 
@@ -169,12 +171,28 @@ async function loadDocuments() {
 
 function renderDocuments() {
   const search = $("#document-search").value.trim().toLowerCase();
-  const provider = $("#provider-filter").value;
+  const providerFilter = $("#provider-filter");
+  const invoiceScope = state.documentScope !== "all";
+  if (invoiceScope) providerFilter.value = "sef";
+  providerFilter.disabled = invoiceScope;
+  const provider = providerFilter.value;
   const status = $("#status-filter").value;
-  const filtered = state.documents.filter(doc => {
+  const scoped = state.documents.filter(doc => {
+    if (state.documentScope === "inbound") return doc.provider === "sef" && doc.direction === "inbound" && doc.document_type === "purchase_invoice";
+    if (state.documentScope === "outbound") return doc.provider === "sef" && doc.direction === "outbound" && doc.document_type === "sales_invoice";
+    return true;
+  });
+  const filtered = scoped.filter(doc => {
     const text = `${doc.document_number || ""} ${doc.counterparty_name || ""} ${doc.counterparty_tax_id || ""}`.toLowerCase();
     return (!search || text.includes(search)) && (!provider || doc.provider === provider) && (!status || doc.status === status);
   });
+  const headings = {
+    all: ["Pregled dokumenata", "SEF fakture i eOtpremnice iz svih aktivnih tokova."],
+    inbound: ["Ulazne fakture", "Fakture dobavljača automatski preuzete sa SEF-a."],
+    outbound: ["Izlazne fakture", "Fakture kupcima kreirane i poslate kroz SEF."],
+  };
+  $("#documents-heading").textContent = headings[state.documentScope][0];
+  $("#documents-description").textContent = headings[state.documentScope][1];
   $("#document-rows").innerHTML = filtered.map(doc => `<tr>
     <td><strong>${escapeHtml(doc.document_number || documentTypeNames[doc.document_type] || doc.document_type)}</strong><small>${escapeHtml(documentTypeNames[doc.document_type] || doc.document_type)} · ${doc.direction === "outbound" ? "izlazni" : "ulazni"}</small></td>
     <td><span class="service ${doc.provider}">${doc.provider === "sef" ? "SEF" : "eOtpremnice"}</span></td>
@@ -183,10 +201,13 @@ function renderDocuments() {
     <td><span class="status ${doc.status}">${escapeHtml(statusNames[doc.status] || doc.status)}</span><small>${escapeHtml(doc.remote_status || "")}</small></td>
     <td><button class="row-action" data-document-id="${doc.id}">Detalji</button></td></tr>`).join("");
   $("#documents-empty").hidden = filtered.length > 0;
-  $("#metric-total").textContent = state.documents.length;
-  $("#metric-active").textContent = state.documents.filter(doc => ["queued", "sent"].includes(doc.status)).length;
-  $("#metric-success").textContent = state.documents.filter(doc => ["delivered", "accepted"].includes(doc.status)).length;
-  $("#metric-errors").textContent = state.documents.filter(doc => ["rejected", "error"].includes(doc.status)).length;
+  $("#metric-total").textContent = scoped.length;
+  $("#metric-active").textContent = scoped.filter(doc => ["queued", "sent"].includes(doc.status)).length;
+  $("#metric-success").textContent = scoped.filter(doc => ["delivered", "accepted"].includes(doc.status)).length;
+  $("#metric-errors").textContent = scoped.filter(doc => ["rejected", "error"].includes(doc.status)).length;
+  $("#inbound-document-count").textContent = state.documents.filter(doc => doc.provider === "sef" && doc.direction === "inbound" && doc.document_type === "purchase_invoice").length;
+  $("#outbound-document-count").textContent = state.documents.filter(doc => doc.provider === "sef" && doc.direction === "outbound" && doc.document_type === "sales_invoice").length;
+  $$("[data-document-scope]").forEach(item => item.classList.toggle("scope-active", item.dataset.documentScope === state.documentScope));
   $$("[data-document-id]").forEach(button => button.addEventListener("click", () => showDocument(button.dataset.documentId)));
 }
 
@@ -341,6 +362,14 @@ function showView(name) {
   $$(".view").forEach(view => view.classList.toggle("active", view.id === `view-${name}`));
   $$(".nav-item[data-view]").forEach(item => item.classList.toggle("active", item.dataset.view === name));
   $(".sidebar").classList.remove("open");
+}
+
+function showDocumentScope(scope) {
+  state.documentScope = scope;
+  sessionStorage.setItem(documentScopeKey, scope);
+  if (scope === "all") $("#provider-filter").value = "";
+  showView("documents");
+  renderDocuments();
 }
 
 $("#login-form").addEventListener("submit", async event => {
@@ -641,7 +670,8 @@ $("#refresh-button").onclick = async () => { await loadWorkspace(); showToast("P
 $("#logout").onclick = async () => { try { await api("/api/v1/auth/logout", {method:"POST", tenant:false}); } finally { clearSession(); } };
 $("#menu-button").onclick = () => $(".sidebar").classList.toggle("open");
 $$('.close-dialog').forEach(button => button.onclick = () => button.closest("dialog").close());
-$$('.nav-item[data-view]').forEach(button => button.onclick = () => showView(button.dataset.view));
+$$('.nav-item[data-view]').forEach(button => button.onclick = () => button.dataset.view === "documents" ? showDocumentScope("all") : showView(button.dataset.view));
+$$('.nav-subitem[data-document-scope]').forEach(button => button.onclick = () => showDocumentScope(button.dataset.documentScope));
 [$("#document-search"), $("#provider-filter"), $("#status-filter")].forEach(control => control.addEventListener("input", renderDocuments));
 $("#customer-search").addEventListener("input", renderCustomers);
 $("#item-search").addEventListener("input", renderCatalogItems);
