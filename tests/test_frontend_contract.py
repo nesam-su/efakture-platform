@@ -20,7 +20,7 @@ def test_frontend_uses_provider_specific_send_labels():
     assert 'return provider === "sef" ? "SEF" : "eOtpremnice"' in script
     assert "Pošalji u red" not in script
     assert "Pošalji u red" not in template
-    assert '/static/app.js?v=0.8.12' in template
+    assert '/static/app.js?v=0.8.13' in template
 
 
 def test_frontend_separates_inbound_and_outbound_invoices_in_sidebar():

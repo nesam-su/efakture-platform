@@ -99,6 +99,8 @@ def test_public_pages(monkeypatch):
     assert client.get("/static/favicon.svg").status_code == 200
     assert response.headers["X-Frame-Options"] == "DENY"
     assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+    assert response.headers["Cache-Control"] == "no-store, max-age=0"
+    assert client.get("/static/app.js").headers["Cache-Control"] == "no-store, max-age=0"
 
 
 def test_csv_environment_lists(monkeypatch):

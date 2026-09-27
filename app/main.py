@@ -24,7 +24,7 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 app = FastAPI(
     title="eFakture i eOtpremnice",
-    version="0.8.12",
+    version="0.8.13",
     docs_url="/api/docs" if settings.env != "production" else None,
     redoc_url=None,
     lifespan=lifespan,
@@ -54,6 +54,9 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
     return response
 
 
