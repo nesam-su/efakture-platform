@@ -321,6 +321,7 @@ function parseBusinessXml(xmlSource, doc) {
       unitPrice: xmlText(xmlElement(line, "Price"), "PriceAmount"),
       netAmount: xmlText(line, "LineExtensionAmount"),
       vatRate: xmlText(xmlElement(line, "ClassifiedTaxCategory"), "Percent"),
+      vatCategory: xmlText(xmlElement(line, "ClassifiedTaxCategory"), "ID"),
     };
   });
   return {
@@ -333,6 +334,8 @@ function parseBusinessXml(xmlSource, doc) {
     lines,
     total: xmlText(xmlElement(root, "LegalMonetaryTotal"), "PayableAmount") || doc.total_amount,
     note: xmlText(root, "Note"),
+    paymentAccount: xmlText(xmlElement(root, "PayeeFinancialAccount"), "ID"),
+    paymentReference: xmlText(xmlElement(root, "PaymentMeans"), "PaymentID"),
   };
 }
 
@@ -348,9 +351,11 @@ function previewFromStoredForm(doc) {
     currency: form.currency || doc.currency || "RSD",
     issuer: {name:state.organization?.name || "—", taxId:state.organization?.tax_id || "", address:[profile.street, profile.postal_code, profile.city].filter(Boolean).join(", ")},
     recipient: {name:customer.name || doc.counterparty_name || "—", taxId:customer.tax_id || doc.counterparty_tax_id || "", address:customer.address ? [customer.address.street, customer.address.postal_code, customer.address.city].filter(Boolean).join(", ") : ""},
-    lines: (form.lines || []).map((line, index) => ({number:String(index + 1), name:line.name || "Stavka", description:line.description || "", quantity:line.quantity, unit:line.unit_code || "", unitPrice:line.unit_price, netAmount:Number(line.quantity || 0) * Number(line.unit_price || 0), vatRate:line.vat_rate})),
+    lines: (form.lines || []).map((line, index) => ({number:String(index + 1), name:line.name || "Stavka", description:line.description || "", quantity:line.quantity, unit:line.unit_code || "", unitPrice:line.unit_price, netAmount:Number(line.quantity || 0) * Number(line.unit_price || 0), vatRate:line.vat_rate, vatCategory:line.vat_category || "S"})),
     total: doc.total_amount,
     note: form.note || "",
+    paymentAccount: form.payment_account || profile.bank_account || "",
+    paymentReference: form.payment_reference || "",
   };
 }
 
@@ -378,7 +383,51 @@ function documentPreviewMarkup(preview) {
 function printDocument(doc, preview) {
   const popup = window.open("", "_blank", "width=1000,height=760");
   if (!popup) { showToast("Pregledač je blokirao prozor za štampu.", true); return; }
-  popup.document.write(`<!doctype html><html lang="sr-Latn"><head><meta charset="utf-8"><title>${escapeHtml(preview.number)}</title><style>body{font:14px Arial,sans-serif;color:#111;margin:28px}h1{margin:0 0 6px}small{color:#555}.meta,.parties{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:22px 0}.box{border:1px solid #bbb;padding:12px}.box span,.box strong,.box small{display:block}table{width:100%;border-collapse:collapse;margin:20px 0}th,td{border:1px solid #bbb;padding:8px;text-align:left}th{background:#eee}.total{text-align:right;font-size:18px;font-weight:bold}@media print{body{margin:12mm}}</style></head><body><h1>${escapeHtml(doc.document_type === "despatch_advice" ? "Otpremnica" : "Faktura")} ${escapeHtml(preview.number)}</h1><small>${escapeHtml(doc.provider === "sef" ? "SEF" : "eOtpremnice")} · ${escapeHtml(documentStatusName(doc))}</small><div class="meta"><div class="box"><span>Datum</span><strong>${formatDate(preview.issueDate)}</strong></div><div class="box"><span>Valuta</span><strong>${escapeHtml(preview.currency || "—")}</strong></div></div><div class="parties"><div class="box"><span>Izdavalac / pošiljalac</span><strong>${escapeHtml(preview.issuer.name)}</strong><small>PIB: ${escapeHtml(preview.issuer.taxId || "—")}</small><small>${escapeHtml(preview.issuer.address)}</small></div><div class="box"><span>Primalac</span><strong>${escapeHtml(preview.recipient.name)}</strong><small>PIB: ${escapeHtml(preview.recipient.taxId || "—")}</small><small>${escapeHtml(preview.recipient.address)}</small></div></div>${preview.lines.length ? `<table><thead><tr><th>R.br.</th><th>Stavka</th><th>Količina</th><th>Cena</th><th>PDV</th><th>Iznos</th></tr></thead><tbody>${preview.lines.map(line => `<tr><td>${escapeHtml(line.number)}</td><td>${escapeHtml(line.name)}</td><td>${escapeHtml(line.quantity)} ${escapeHtml(unitNames[line.unit] || line.unit)}</td><td>${line.unitPrice === "" || line.unitPrice == null ? "—" : formatAmount(line.unitPrice, preview.currency)}</td><td>${line.vatRate === "" || line.vatRate == null ? "—" : `${escapeHtml(line.vatRate)}%`}</td><td>${line.netAmount === "" || line.netAmount == null ? "—" : formatAmount(line.netAmount, preview.currency)}</td></tr>`).join("")}</tbody></table>` : ""}<p class="total">Ukupno: ${formatAmount(preview.total, preview.currency)}</p>${preview.note ? `<p><strong>Napomena:</strong> ${escapeHtml(preview.note)}</p>` : ""}</body></html>`);
+  const invoice = doc.document_type !== "despatch_advice";
+  const currency = preview.currency || "RSD";
+  const numericLines = preview.lines.map(line => ({...line, net:Number(line.netAmount), rate:Number(line.vatRate)}));
+  const subtotal = numericLines.reduce((sum, line) => sum + (Number.isFinite(line.net) ? line.net : 0), 0);
+  const vatGroups = numericLines.reduce((groups, line) => {
+    if (!Number.isFinite(line.net)) return groups;
+    const rate = Number.isFinite(line.rate) ? line.rate : 0;
+    const category = line.vatCategory || "S";
+    const key = `${rate}:${category}`;
+    groups[key] ||= {rate, category, base:0, vat:0};
+    groups[key].base += line.net;
+    groups[key].vat += line.net * rate / 100;
+    return groups;
+  }, {});
+  const vatRows = Object.values(vatGroups).sort((left, right) => left.rate - right.rate);
+  const vatTotal = vatRows.reduce((sum, group) => sum + group.vat, 0);
+  const documentLabel = doc.document_type === "despatch_advice" ? "OTPREMNICA" : doc.direction === "inbound" ? "ULAZNA FAKTURA" : "FAKTURA";
+  const partyLabel = doc.document_type === "despatch_advice" ? "Pošiljalac" : "Izdavalac";
+  const recipientLabel = doc.document_type === "despatch_advice" ? "Primalac robe" : "Kupac / primalac";
+  const itemHeader = invoice
+    ? '<th class="num">R.br.</th><th>Artikal / usluga</th><th class="right">Količina</th><th class="right">Jed. cena</th><th class="right">PDV</th><th class="right">Osnovica</th>'
+    : '<th class="num">R.br.</th><th>Artikal / opis robe</th><th class="right">Količina</th><th>Jedinica mere</th>';
+  const itemRows = preview.lines.map(line => `<tr><td class="num">${escapeHtml(line.number)}</td><td><strong>${escapeHtml(line.name)}</strong>${line.description ? `<span class="description">${escapeHtml(line.description)}</span>` : ""}</td><td class="right nowrap">${escapeHtml(line.quantity)}</td>${invoice ? `<td class="right nowrap">${line.unitPrice === "" || line.unitPrice == null ? "—" : formatAmount(line.unitPrice, currency)}</td><td class="right nowrap">${line.vatRate === "" || line.vatRate == null ? "—" : `${escapeHtml(line.vatRate)}%`}</td><td class="right nowrap"><strong>${line.netAmount === "" || line.netAmount == null ? "—" : formatAmount(line.netAmount, currency)}</strong></td>` : `<td>${escapeHtml(unitNames[line.unit] || line.unit || "—")}</td>`}</tr>`).join("");
+  const vatSummary = vatRows.length ? `<table class="vat-table"><thead><tr><th>PDV stopa</th><th class="right">Osnovica</th><th class="right">PDV iznos</th></tr></thead><tbody>${vatRows.map(group => `<tr><td>${escapeHtml(vatNames[`${group.rate}:${group.category}`] || `${group.rate}%`)}</td><td class="right">${formatAmount(group.base, currency)}</td><td class="right">${formatAmount(group.vat, currency)}</td></tr>`).join("")}</tbody></table>` : "";
+  const paymentBlock = preview.paymentAccount || preview.paymentReference ? `<section class="section payment"><h2>Podaci za plaćanje</h2><div class="payment-grid">${preview.paymentAccount ? `<div><span>Račun za uplatu</span><strong>${escapeHtml(preview.paymentAccount)}</strong></div>` : ""}${preview.paymentReference ? `<div><span>Poziv na broj</span><strong>${escapeHtml(preview.paymentReference)}</strong></div>` : ""}</div></section>` : "";
+  popup.document.write(`<!doctype html><html lang="sr-Latn"><head><meta charset="utf-8"><title>${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</title><style>
+    :root{--ink:#172522;--muted:#5d6b67;--line:#aebbb7;--soft:#eef4f2;--accent:#176b58;--accent-dark:#104b3e}
+    *{box-sizing:border-box}html{background:#e8eceb}body{width:210mm;min-height:297mm;margin:18px auto;background:#fff;color:var(--ink);font:10.5pt/1.38 Arial,Helvetica,sans-serif;padding:14mm 13mm 16mm;box-shadow:0 6px 28px #0002}
+    h1,h2,p{margin:0}h1{font-size:25pt;line-height:1;color:var(--accent-dark);letter-spacing:.02em}h2{font-size:10pt;text-transform:uppercase;letter-spacing:.08em;color:var(--accent-dark);margin-bottom:8px}.eyebrow{font-size:8pt;font-weight:700;letter-spacing:.16em;color:var(--accent);margin-bottom:5px}.muted{color:var(--muted)}.right{text-align:right}.num{width:12mm;text-align:center}.nowrap{white-space:nowrap}
+    .document-header{display:flex;justify-content:space-between;gap:20px;border-bottom:3px solid var(--accent);padding-bottom:12px}.brand{max-width:48%}.brand strong{display:block;font-size:15pt;margin-bottom:3px}.document-id{text-align:right}.document-id .number{display:block;font-size:13pt;font-weight:700;margin-top:7px}.status{display:inline-block;border:1px solid var(--accent);border-radius:12px;color:var(--accent-dark);font-size:8pt;font-weight:700;padding:3px 9px;margin-top:7px}
+    .meta-table{width:100%;border-collapse:collapse;margin:11px 0 13px}.meta-table td{border:1px solid var(--line);padding:7px 9px;width:25%;vertical-align:top}.meta-table span,.party span,.payment span{display:block;color:var(--muted);font-size:8pt;text-transform:uppercase;letter-spacing:.04em}.meta-table strong{display:block;margin-top:2px;font-size:10pt}
+    .parties{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}.party{border:1px solid var(--line);border-top:4px solid var(--accent);padding:10px;min-height:30mm}.party strong{display:block;font-size:12pt;margin:4px 0}.party small{display:block;color:var(--muted);margin-top:2px}
+    .section{margin-top:13px;break-inside:avoid}.items{width:100%;border-collapse:collapse;font-size:9pt}.items th{background:var(--accent-dark);color:#fff;border:1px solid var(--accent-dark);font-size:8pt;text-transform:uppercase;letter-spacing:.035em;padding:7px 6px}.items td{border:1px solid var(--line);padding:7px 6px;vertical-align:top}.items tbody tr:nth-child(even){background:#f8faf9}.description{display:block;color:var(--muted);font-size:8pt;margin-top:2px}
+    .calculation{display:grid;grid-template-columns:minmax(0,1fr) 68mm;gap:12px;align-items:start;margin-top:12px}.vat-table{width:100%;border-collapse:collapse;font-size:9pt}.vat-table th,.vat-table td{border:1px solid var(--line);padding:6px 8px}.vat-table th{background:var(--soft);color:var(--accent-dark)}.totals{border:2px solid var(--accent-dark)}.totals-row{display:flex;justify-content:space-between;gap:10px;padding:7px 9px;border-bottom:1px solid var(--line)}.totals-row:last-child{border:0;background:var(--accent-dark);color:#fff;font-size:13pt;font-weight:700;padding:10px 9px}.totals-row span:last-child{white-space:nowrap}
+    .payment,.note{border:1px solid var(--line);padding:10px}.payment-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.payment strong{display:block;margin-top:3px}.note p{white-space:pre-line}.footer{margin-top:18px;padding-top:8px;border-top:1px solid var(--line);display:flex;justify-content:space-between;color:var(--muted);font-size:8pt}
+    @page{size:A4;margin:10mm} @media print{html{background:#fff}body{width:auto;min-height:auto;margin:0;padding:0;box-shadow:none;-webkit-print-color-adjust:exact;print-color-adjust:exact}.section,.party,.calculation,tr{break-inside:avoid}thead{display:table-header-group}.footer{position:fixed;bottom:0;left:0;right:0}}
+  </style></head><body>
+    <header class="document-header"><div class="brand"><p class="eyebrow">IZDAVALAC DOKUMENTA</p><strong>${escapeHtml(preview.issuer.name)}</strong><span class="muted">PIB: ${escapeHtml(preview.issuer.taxId || "—")}</span></div><div class="document-id"><h1>${escapeHtml(documentLabel)}</h1><span class="number">Broj: ${escapeHtml(preview.number)}</span><span class="status">${escapeHtml(documentStatusName(doc))}</span></div></header>
+    <table class="meta-table"><tr><td><span>Datum izdavanja</span><strong>${formatDate(preview.issueDate)}</strong></td><td><span>${invoice ? "Datum dospeća" : "Datum isporuke"}</span><strong>${formatDate(preview.dueDate)}</strong></td><td><span>Valuta</span><strong>${escapeHtml(currency)}</strong></td><td><span>Servis</span><strong>${escapeHtml(doc.provider === "sef" ? "SEF" : "eOtpremnice")}</strong></td></tr></table>
+    <section class="parties"><div class="party"><span>${partyLabel}</span><strong>${escapeHtml(preview.issuer.name)}</strong><small>PIB: ${escapeHtml(preview.issuer.taxId || "—")}</small><small>${escapeHtml(preview.issuer.address || "Adresa nije navedena")}</small></div><div class="party"><span>${recipientLabel}</span><strong>${escapeHtml(preview.recipient.name)}</strong><small>PIB: ${escapeHtml(preview.recipient.taxId || "—")}</small><small>${escapeHtml(preview.recipient.address || "Adresa nije navedena")}</small></div></section>
+    <section class="section"><h2>Stavke dokumenta</h2>${preview.lines.length ? `<table class="items"><thead><tr>${itemHeader}</tr></thead><tbody>${itemRows}</tbody></table>` : '<p class="muted">Nema stavki dostupnih za prikaz.</p>'}</section>
+    ${invoice ? `<section class="calculation"><div><h2>Pregled PDV-a</h2>${vatSummary || '<p class="muted">PDV obračun nije dostupan.</p>'}</div><div class="totals"><div class="totals-row"><span>Osnovica</span><span>${formatAmount(subtotal, currency)}</span></div><div class="totals-row"><span>PDV</span><span>${formatAmount(vatTotal, currency)}</span></div><div class="totals-row"><span>UKUPNO ZA PLAĆANJE</span><span>${formatAmount(preview.total, currency)}</span></div></div></section>${paymentBlock}` : ""}
+    ${preview.note ? `<section class="section note"><h2>Napomena</h2><p>${escapeHtml(preview.note)}</p></section>` : ""}
+    <footer class="footer"><span>Dokument pripremljen u aplikaciji eDokumenti</span><span>${escapeHtml(documentLabel)} · ${escapeHtml(preview.number)}</span></footer>
+  </body></html>`);
   popup.document.close(); popup.focus(); setTimeout(() => popup.print(), 200);
 }
 

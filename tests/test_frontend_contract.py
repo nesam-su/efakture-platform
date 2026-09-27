@@ -20,7 +20,7 @@ def test_frontend_uses_provider_specific_send_labels():
     assert 'return provider === "sef" ? "SEF" : "eOtpremnice"' in script
     assert "Pošalji u red" not in script
     assert "Pošalji u red" not in template
-    assert '/static/app.js?v=0.8.11' in template
+    assert '/static/app.js?v=0.8.12' in template
 
 
 def test_frontend_separates_inbound_and_outbound_invoices_in_sidebar():
@@ -44,6 +44,19 @@ def test_frontend_separates_inbound_and_outbound_invoices_in_sidebar():
     assert 'new:"Novo"' in script
     assert 'return "Primljena"' in script
     assert 'return "Poslata"' in script
+
+
+def test_print_layout_has_professional_invoice_sections():
+    script = (PROJECT_ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert '@page{size:A4' in script
+    assert 'class="document-header"' in script
+    assert 'class="parties"' in script
+    assert 'Pregled PDV-a' in script
+    assert 'UKUPNO ZA PLAĆANJE' in script
+    assert 'Podaci za plaćanje' in script
+    assert 'print-color-adjust:exact' in script
+    assert 'thead{display:table-header-group}' in script
 
 
 def test_carrier_fields_are_required_for_external_carrier_transport():
