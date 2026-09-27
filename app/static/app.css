@@ -22,6 +22,7 @@ dialog.document-workspace>form{padding:28px clamp(20px,3vw,42px)}
 .line-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .table-wrap tbody tr:hover{background:#f0f8f6}
 .row-action{padding:7px 11px;border-radius:7px;background:#e1f1ed}
+.row-actions{display:flex;align-items:center;gap:6px}.row-action.print-action{background:#edf1f4;color:#40535a}
 .danger-button{margin-right:auto;border:1px solid #d9a8b1;border-radius:9px;padding:10px 15px;background:#fff1f3;color:#981b31;font-weight:800}
 .danger-button:hover{background:#fbdde2}
 #detail-dialog{width:min(1100px,calc(100vw - 30px));max-width:none;max-height:calc(100vh - 28px)}

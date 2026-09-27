@@ -20,7 +20,7 @@ def test_frontend_uses_provider_specific_send_labels():
     assert 'return provider === "sef" ? "SEF" : "eOtpremnice"' in script
     assert "Pošalji u red" not in script
     assert "Pošalji u red" not in template
-    assert '/static/app.js?v=0.8.15' in template
+    assert '/static/app.js?v=0.8.16' in template
 
 
 def test_frontend_separates_inbound_and_outbound_invoices_in_sidebar():
@@ -39,7 +39,7 @@ def test_frontend_separates_inbound_and_outbound_invoices_in_sidebar():
     assert 'doc.document_type === "purchase_invoice"' in script
     assert 'doc.document_type === "sales_invoice"' in script
     assert 'showDocumentScope(button.dataset.documentScope)' in script
-    assert 'id="print-detail"' in script
+    assert 'data-print-document-id="${doc.id}">Štampaj</button>' in script
     assert "XML je namenjen razmeni sa državnim servisom" in script
     assert 'new:"Novo"' in script
     assert 'return "Primljena"' in script
@@ -61,8 +61,10 @@ def test_print_layout_has_professional_invoice_sections():
     assert 'Podaci za plaćanje' in script
     assert 'print-color-adjust: exact' in print_styles
     assert 'thead { display: table-header-group; }' in print_styles
-    assert '/static/print.css?v=0.8.15' in script
-    assert 'id="print-detail">Pregled štampe</button>' in script
+    assert '/static/print.css?v=0.8.16' in script
+    assert 'id="print-detail"' not in script
+    assert 'showPrintPreview(button.dataset.printDocumentId)' in script
+    assert 'function printDocument(doc, preview, existingPopup = null)' in script
     assert 'class="print-toolbar"' in script
     assert 'id="print-now"' in script
     assert 'Štampaj dokument' in script
