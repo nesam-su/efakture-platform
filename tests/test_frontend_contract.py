@@ -20,7 +20,7 @@ def test_frontend_uses_provider_specific_send_labels():
     assert 'return provider === "sef" ? "SEF" : "eOtpremnice"' in script
     assert "Pošalji u red" not in script
     assert "Pošalji u red" not in template
-    assert '/static/app.js?v=0.8.17' in template
+    assert '/static/app.js?v=0.8.18' in template
 
 
 def test_frontend_separates_inbound_and_outbound_invoices_in_sidebar():
@@ -61,7 +61,7 @@ def test_print_layout_has_professional_invoice_sections():
     assert 'Podaci za plaćanje' in script
     assert 'print-color-adjust: exact' in print_styles
     assert 'thead { display: table-header-group; }' in print_styles
-    assert '/static/print.css?v=0.8.17' in script
+    assert '/static/print.css?v=0.8.18' in script
     assert (
         ".party:first-child { border-right: 0; border-bottom: 0; border-left: 0; }"
         in print_styles
@@ -93,3 +93,15 @@ def test_existing_despatch_editor_uses_current_serbian_issue_date():
     assert 'planned.min = minimum; actual.min = minimum' in script
     assert 'delivery.min = [minimum, planned.value, actual.value]' in script
     assert 'Datum izdavanja je današnji datum Srbije' in script
+
+
+def test_new_document_follows_active_scope_and_reveals_saved_document():
+    script = (PROJECT_ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert 'state.documentScope === "despatch" ? "eotpremnice" : "sef"' in script
+    assert (
+        'state.documentScope = provider === "eotpremnice" ? "despatch" : "outbound"'
+        in script
+    )
+    assert 'sessionStorage.setItem(documentScopeKey, state.documentScope)' in script
+    assert '$("#document-search").value = ""; $("#status-filter").value = "";' in script

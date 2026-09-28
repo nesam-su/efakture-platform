@@ -410,14 +410,14 @@ function printDocument(doc, preview, existingPopup = null) {
   const vatSummary = vatRows.length ? `<table class="vat-table"><thead><tr><th>PDV stopa</th><th class="right">Osnovica</th><th class="right">PDV iznos</th></tr></thead><tbody>${vatRows.map(group => `<tr><td>${escapeHtml(vatNames[`${group.rate}:${group.category}`] || `${group.rate}%`)}</td><td class="right">${formatAmount(group.base, currency)}</td><td class="right">${formatAmount(group.vat, currency)}</td></tr>`).join("")}</tbody></table>` : "";
   const paymentBlock = preview.paymentAccount || preview.paymentReference ? `<section class="section payment"><h2>Podaci za plaćanje</h2><div class="payment-grid">${preview.paymentAccount ? `<div><span>Račun za uplatu</span><strong>${escapeHtml(preview.paymentAccount)}</strong></div>` : ""}${preview.paymentReference ? `<div><span>Poziv na broj</span><strong>${escapeHtml(preview.paymentReference)}</strong></div>` : ""}</div></section>` : "";
   popup.document.open();
-  popup.document.write(`<!doctype html><html lang="sr-Latn"><head><meta charset="utf-8"><title>${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</title><link rel="stylesheet" href="${escapeHtml(location.origin)}/static/print.css?v=0.8.17"></head><body><div class="print-toolbar"><strong>Pregled štampe · ${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</strong><div class="print-actions"><button id="close-print" type="button">Zatvori</button><button class="primary" id="print-now" type="button">Štampaj dokument</button></div></div>
+  popup.document.write(`<!doctype html><html lang="sr-Latn"><head><meta charset="utf-8"><title>${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</title><link rel="stylesheet" href="${escapeHtml(location.origin)}/static/print.css?v=0.8.18"></head><body><div class="print-toolbar"><strong>Pregled štampe · ${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</strong><div class="print-actions"><button id="close-print" type="button">Zatvori</button><button class="primary" id="print-now" type="button">Štampaj dokument</button></div></div>
     <header class="document-header"><div class="brand"><p class="eyebrow">IZDAVALAC DOKUMENTA</p><strong>${escapeHtml(preview.issuer.name)}</strong><span class="muted">PIB: ${escapeHtml(preview.issuer.taxId || "—")}</span></div><div class="document-id"><h1>${escapeHtml(documentLabel)}</h1><span class="number">Broj: ${escapeHtml(preview.number)}</span><span class="status">${escapeHtml(documentStatusName(doc))}</span></div></header>
     <table class="meta-table"><tr><td><span>Datum izdavanja</span><strong>${formatDate(preview.issueDate)}</strong></td><td><span>${invoice ? "Datum dospeća" : "Datum isporuke"}</span><strong>${formatDate(preview.dueDate)}</strong></td><td><span>Valuta</span><strong>${escapeHtml(currency)}</strong></td><td><span>Servis</span><strong>${escapeHtml(doc.provider === "sef" ? "SEF" : "eOtpremnice")}</strong></td></tr></table>
     <section class="parties"><div class="party"><span>${partyLabel}</span><strong>${escapeHtml(preview.issuer.name)}</strong><small>PIB: ${escapeHtml(preview.issuer.taxId || "—")}</small><small>${escapeHtml(preview.issuer.address || "Adresa nije navedena")}</small></div><div class="party"><span>${recipientLabel}</span><strong>${escapeHtml(preview.recipient.name)}</strong><small>PIB: ${escapeHtml(preview.recipient.taxId || "—")}</small><small>${escapeHtml(preview.recipient.address || "Adresa nije navedena")}</small></div></section>
     <section class="section"><h2>Stavke dokumenta</h2>${preview.lines.length ? `<table class="items"><thead><tr>${itemHeader}</tr></thead><tbody>${itemRows}</tbody></table>` : '<p class="muted">Nema stavki dostupnih za prikaz.</p>'}</section>
     ${invoice ? `<section class="calculation"><div><h2>Pregled PDV-a</h2>${vatSummary || '<p class="muted">PDV obračun nije dostupan.</p>'}</div><div class="totals"><div class="totals-row"><span>Osnovica</span><span>${formatAmount(subtotal, currency)}</span></div><div class="totals-row"><span>PDV</span><span>${formatAmount(vatTotal, currency)}</span></div><div class="totals-row"><span>UKUPNO ZA PLAĆANJE</span><span>${formatAmount(preview.total, currency)}</span></div></div></section>${paymentBlock}` : ""}
     ${preview.note ? `<section class="section note"><h2>Napomena</h2><p>${escapeHtml(preview.note)}</p></section>` : ""}
-    <footer class="footer"><span>Dokument pripremljen u aplikaciji eDokumenti · šablon 0.8.17</span><span>${escapeHtml(documentLabel)} · ${escapeHtml(preview.number)}</span></footer>
+    <footer class="footer"><span>Dokument pripremljen u aplikaciji eDokumenti · šablon 0.8.18</span><span>${escapeHtml(documentLabel)} · ${escapeHtml(preview.number)}</span></footer>
   </body></html>`);
   popup.document.close();
   popup.document.querySelector("#print-now").onclick = () => popup.print();
@@ -770,7 +770,17 @@ $("#document-form").addEventListener("submit", async event => {
   if (provider === "sef") Object.assign(payload, {delivery_date:data.delivery_date, due_date:data.due_date, currency:data.currency, payment_account:data.payment_account || null, payment_reference:data.payment_reference || null});
   else Object.assign(payload, {despatch_type:data.despatch_type, shipment_id:data.shipment_id, shipment_method:data.shipment_method, order_reference:data.order_reference || null, planned_despatch_at:new Date(data.planned_despatch_at).toISOString(), actual_despatch_at:new Date(data.actual_despatch_at).toISOString(), planned_delivery_at:new Date(data.planned_delivery_at).toISOString(), despatch_address:{street:data.despatch_street, city:data.despatch_city, postal_code:data.despatch_postal_code, country_code:data.despatch_country_code.toUpperCase()}, delivery_address:{street:data.delivery_street, city:data.delivery_city, postal_code:data.delivery_postal_code, country_code:data.delivery_country_code.toUpperCase()}, gross_weight:data.gross_weight ? Number(data.gross_weight) : null, package_count:data.package_count ? Number(data.package_count) : null, carrier_name:data.carrier_name || null, carrier_tax_id:data.carrier_tax_id || null, carrier_registration_number:data.carrier_registration_number || null, vehicle_plate:data.vehicle_plate || null, driver_name:data.driver_name || null, driver_email:data.driver_email || null});
   const path = editingDocumentId ? `/api/v1/documents/${editingDocumentId}/from-form` : "/api/v1/documents/from-form";
-  try { await api(path, {method:editingDocumentId ? "PUT" : "POST", body:JSON.stringify(payload)}); $("#document-dialog").close(); showToast(editingDocumentId ? "Izmene su sačuvane i XML je ponovo generisan." : (data.queue_after_create ? `Dokument je pripremljen i slanje u ${providerDestination(provider)} je pokrenuto.` : "Dokument i UBL XML su sačuvani.")); editingDocumentId = null; await loadDocuments(); await loadJobs(); } catch (error) { $("#document-error").textContent = error.message; }
+  try {
+    await api(path, {method:editingDocumentId ? "PUT" : "POST", body:JSON.stringify(payload)});
+    $("#document-dialog").close();
+    showToast(editingDocumentId ? "Izmene su sačuvane i XML je ponovo generisan." : (data.queue_after_create ? `Dokument je pripremljen i slanje u ${providerDestination(provider)} je pokrenuto.` : "Dokument i UBL XML su sačuvani."));
+    editingDocumentId = null;
+    state.documentScope = provider === "eotpremnice" ? "despatch" : "outbound";
+    sessionStorage.setItem(documentScopeKey, state.documentScope);
+    $("#document-search").value = ""; $("#status-filter").value = "";
+    showView("documents");
+    await loadDocuments(); await loadJobs();
+  } catch (error) { $("#document-error").textContent = error.message; }
 });
 
 $("#customer-form").addEventListener("submit", async event => {
@@ -832,7 +842,10 @@ $("#new-document-button").onclick = () => {
   const requiredProfile = ["street", "city", "postal_code", "country_code", "email"];
   const validTaxId = /^\d{9}$/.test(state.organization?.tax_id || "");
   if (!validTaxId || requiredProfile.some(field => !state.organization?.profile?.[field])) { showView("settings"); showToast("Prvo unesite važeće pravne i poslovne podatke izabrane firme.", true); return; }
-  $("#document-error").textContent = ""; resetDocumentForm(); $("#document-dialog").showModal();
+  $("#document-error").textContent = ""; resetDocumentForm();
+  $("#document-form").elements.provider.value = state.documentScope === "despatch" ? "eotpremnice" : "sef";
+  toggleDocumentType();
+  $("#document-dialog").showModal();
 };
 $("#new-organization-button").onclick = () => { $("#organization-error").textContent = ""; refreshRequiredMarkers($("#organization-form")); $("#organization-dialog").showModal(); };
 $("#invite-button").onclick = () => {
