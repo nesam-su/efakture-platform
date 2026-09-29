@@ -146,6 +146,43 @@ def test_despatch_form_generates_transport_and_lines():
     assert len(root.findall(f"{{{CAC}}}DespatchLine")) == 1
 
 
+@pytest.mark.parametrize(
+    ("shipment_method", "expected_name", "expected_registration_number"),
+    (("1", "Dobavljač & Sin", "12345678"), ("3", "Kupac DOO", "87654321")),
+)
+def test_despatch_automatically_maps_carrier_party(
+    shipment_method: str, expected_name: str, expected_registration_number: str
+):
+    data = DespatchFormCreate(
+        provider="eotpremnice",
+        document_number=f"OT-{shipment_method}/2026",
+        issue_date=date(2026, 9, 24),
+        customer=customer(),
+        shipment_id=f"POS-{shipment_method}",
+        shipment_method=shipment_method,
+        planned_despatch_at=datetime.fromisoformat("2026-09-25T08:00:00+02:00"),
+        actual_despatch_at=datetime.fromisoformat("2026-09-25T08:10:00+02:00"),
+        planned_delivery_at=datetime.fromisoformat("2026-09-25T12:00:00+02:00"),
+        despatch_address=AddressInput(
+            street="Magacin 1", city="Subotica", postal_code="24000"
+        ),
+        delivery_address=AddressInput(
+            street="Odredište 2", city="Novi Sad", postal_code="21000"
+        ),
+        lines=[DocumentLineInput(name="Roba", quantity=Decimal("1"))],
+    )
+
+    root = ET.fromstring(generate_despatch_xml(organization(), data))
+    carrier = root.find(f".//{{{CAC}}}ShipmentStage/{{{CAC}}}CarrierParty")
+
+    assert carrier is not None
+    assert carrier.findtext(f"{{{CAC}}}PartyName/{{{CBC}}}Name") == expected_name
+    assert (
+        carrier.findtext(f"{{{CAC}}}PartyLegalEntity/{{{CBC}}}CompanyID")
+        == expected_registration_number
+    )
+
+
 def test_despatch_rejects_incomplete_carrier_details():
     with pytest.raises(ValidationError, match="Naziv, PIB i matični broj prevoznika"):
         DespatchFormCreate(

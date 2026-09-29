@@ -405,14 +405,14 @@ function printDocument(doc, preview, existingPopup = null) {
   const vatSummary = vatRows.length ? `<table class="vat-table"><thead><tr><th>PDV stopa</th><th class="right">Osnovica</th><th class="right">PDV iznos</th></tr></thead><tbody>${vatRows.map(group => `<tr><td>${escapeHtml(vatNames[`${group.rate}:${group.category}`] || `${group.rate}%`)}</td><td class="right">${formatAmount(group.base, currency)}</td><td class="right">${formatAmount(group.vat, currency)}</td></tr>`).join("")}</tbody></table>` : "";
   const paymentBlock = preview.paymentAccount || preview.paymentReference ? `<section class="section payment"><h2>Podaci za plaćanje</h2><div class="payment-grid">${preview.paymentAccount ? `<div><span>Račun za uplatu</span><strong>${escapeHtml(preview.paymentAccount)}</strong></div>` : ""}${preview.paymentReference ? `<div><span>Poziv na broj</span><strong>${escapeHtml(preview.paymentReference)}</strong></div>` : ""}</div></section>` : "";
   popup.document.open();
-  popup.document.write(`<!doctype html><html lang="sr-Latn"><head><meta charset="utf-8"><title>${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</title><link rel="stylesheet" href="${escapeHtml(location.origin)}/static/print.css?v=0.8.19"></head><body><div class="print-toolbar"><strong>Pregled štampe · ${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</strong><div class="print-actions"><button id="close-print" type="button">Zatvori</button><button class="primary" id="print-now" type="button">Štampaj dokument</button></div></div>
+  popup.document.write(`<!doctype html><html lang="sr-Latn"><head><meta charset="utf-8"><title>${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</title><link rel="stylesheet" href="${escapeHtml(location.origin)}/static/print.css?v=0.8.20"></head><body><div class="print-toolbar"><strong>Pregled štampe · ${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</strong><div class="print-actions"><button id="close-print" type="button">Zatvori</button><button class="primary" id="print-now" type="button">Štampaj dokument</button></div></div>
     <header class="document-header"><div class="brand"><p class="eyebrow">IZDAVALAC DOKUMENTA</p><strong>${escapeHtml(preview.issuer.name)}</strong><span class="muted">PIB: ${escapeHtml(preview.issuer.taxId || "—")}</span></div><div class="document-id"><h1>${escapeHtml(documentLabel)}</h1><span class="number">Broj: ${escapeHtml(preview.number)}</span><span class="status">${escapeHtml(documentStatusName(doc))}</span></div></header>
     <table class="meta-table"><tr><td><span>Datum izdavanja</span><strong>${formatDate(preview.issueDate)}</strong></td><td><span>${invoice ? "Datum dospeća" : "Datum isporuke"}</span><strong>${formatDate(preview.dueDate)}</strong></td><td><span>Valuta</span><strong>${escapeHtml(currency)}</strong></td><td><span>Servis</span><strong>${escapeHtml(doc.provider === "sef" ? "SEF" : "eOtpremnice")}</strong></td></tr></table>
     <section class="parties"><div class="party"><span>${partyLabel}</span><strong>${escapeHtml(preview.issuer.name)}</strong><small>PIB: ${escapeHtml(preview.issuer.taxId || "—")}</small><small>${escapeHtml(preview.issuer.address || "Adresa nije navedena")}</small></div><div class="party"><span>${recipientLabel}</span><strong>${escapeHtml(preview.recipient.name)}</strong><small>PIB: ${escapeHtml(preview.recipient.taxId || "—")}</small><small>${escapeHtml(preview.recipient.address || "Adresa nije navedena")}</small></div></section>
     <section class="section"><h2>Stavke dokumenta</h2>${preview.lines.length ? `<table class="items"><thead><tr>${itemHeader}</tr></thead><tbody>${itemRows}</tbody></table>` : '<p class="muted">Nema stavki dostupnih za prikaz.</p>'}</section>
     ${invoice ? `<section class="calculation"><div><h2>Pregled PDV-a</h2>${vatSummary || '<p class="muted">PDV obračun nije dostupan.</p>'}</div><div class="totals"><div class="totals-row"><span>Osnovica</span><span>${formatAmount(subtotal, currency)}</span></div><div class="totals-row"><span>PDV</span><span>${formatAmount(vatTotal, currency)}</span></div><div class="totals-row"><span>UKUPNO ZA PLAĆANJE</span><span>${formatAmount(preview.total, currency)}</span></div></div></section>${paymentBlock}` : ""}
     ${preview.note ? `<section class="section note"><h2>Napomena</h2><p>${escapeHtml(preview.note)}</p></section>` : ""}
-    <footer class="footer"><span>Dokument pripremljen u aplikaciji eDokumenti · šablon 0.8.19</span><span>${escapeHtml(documentLabel)} · ${escapeHtml(preview.number)}</span></footer>
+    <footer class="footer"><span>Dokument pripremljen u aplikaciji eDokumenti · šablon 0.8.20</span><span>${escapeHtml(documentLabel)} · ${escapeHtml(preview.number)}</span></footer>
   </body></html>`);
   popup.document.close();
   popup.document.querySelector("#print-now").onclick = () => popup.print();
@@ -675,8 +675,25 @@ function toggleDocumentType() {
 
 function toggleCarrierRequirements() {
   const form = $("#document-form");
-  const carrierRequired = form.elements.provider.value === "eotpremnice" && form.elements.shipment_method.value === "2";
-  ["carrier_name", "carrier_tax_id", "carrier_registration_number"].forEach(name => { form.elements[name].required = carrierRequired; });
+  const isDespatch = form.elements.provider.value === "eotpremnice";
+  const method = form.elements.shipment_method.value;
+  const externalCarrier = isDespatch && method === "2";
+  ["carrier_name", "carrier_tax_id", "carrier_registration_number"].forEach(name => {
+    const control = form.elements[name];
+    control.required = externalCarrier;
+    control.disabled = isDespatch && !externalCarrier;
+    control.closest("label").hidden = isDespatch && !externalCarrier;
+  });
+  const recipientCarrier = isDespatch && method === "3";
+  form.elements.customer_registration_number.required = recipientCarrier;
+  const help = $("#carrier-help");
+  if (help) help.textContent = ({
+    "1":"Prevoznik se automatski preuzima iz podataka vaše firme.",
+    "2":"Unesite naziv, PIB i matični broj angažovanog prevoznika.",
+    "3":"Prevoznik se automatski preuzima iz podataka primaoca. PIB i matični broj primaoca su obavezni.",
+    "4":"Za lično preuzimanje podaci prevoznika nisu potrebni.",
+    "5":"Za ličnu dostavu podaci prevoznika nisu potrebni."
+  })[method] || "";
   refreshRequiredMarkers($("#document-form"));
 }
 

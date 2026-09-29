@@ -341,6 +341,13 @@ class DespatchFormCreate(BaseModel):
             raise ValueError(
                 "Naziv, PIB i matični broj prevoznika obavezni su kada je način otpreme Prevoznik"
             )
+        if self.shipment_method == "3" and (
+            len(self.customer.tax_id) != 9 or not self.customer.registration_number
+        ):
+            raise ValueError(
+                "PIB od 9 cifara i matični broj primaoca obavezni su "
+                "kada prevoz organizuje primalac"
+            )
         if any(carrier_fields) and not all(carrier_fields):
             raise ValueError("Naziv, PIB i matični broj prevoznika unose se zajedno")
         if self.driver_name and not self.driver_email:

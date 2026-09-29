@@ -24,7 +24,7 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 app = FastAPI(
     title="eFakture i eOtpremnice",
-    version="0.8.19",
+    version="0.8.20",
     docs_url="/api/docs" if settings.env != "production" else None,
     redoc_url=None,
     lifespan=lifespan,

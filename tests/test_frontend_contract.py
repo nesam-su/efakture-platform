@@ -20,7 +20,7 @@ def test_frontend_uses_provider_specific_send_labels():
     assert 'return provider === "sef" ? "SEF" : "eOtpremnice"' in script
     assert "Pošalji u red" not in script
     assert "Pošalji u red" not in template
-    assert '/static/app.js?v=0.8.19' in template
+    assert '/static/app.js?v=0.8.20' in template
 
 
 def test_frontend_separates_inbound_and_outbound_invoices_in_sidebar():
@@ -61,7 +61,7 @@ def test_print_layout_has_professional_invoice_sections():
     assert 'Podaci za plaćanje' in script
     assert 'print-color-adjust: exact' in print_styles
     assert 'thead { display: table-header-group; }' in print_styles
-    assert '/static/print.css?v=0.8.19' in script
+    assert '/static/print.css?v=0.8.20' in script
     assert (
         ".party:first-child { border-right: 0; border-bottom: 0; border-left: 0; }"
         in print_styles
@@ -78,7 +78,10 @@ def test_print_layout_has_professional_invoice_sections():
 def test_carrier_fields_are_required_for_external_carrier_transport():
     script = (PROJECT_ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
 
-    assert 'form.elements.shipment_method.value === "2"' in script
+    assert 'const externalCarrier = isDespatch && method === "2"' in script
+    assert 'const recipientCarrier = isDespatch && method === "3"' in script
+    assert 'control.closest("label").hidden = isDespatch && !externalCarrier' in script
+    assert 'Prevoznik se automatski preuzima iz podataka vaše firme.' in script
     assert '["carrier_name", "carrier_tax_id", "carrier_registration_number"]' in script
     assert 'addEventListener("change", toggleCarrierRequirements)' in script
     assert 'replace(/^Value error,\\s*/i, "")' in script

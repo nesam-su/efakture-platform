@@ -233,6 +233,8 @@ def _despatch_line(root: ET.Element, line: DocumentLineInput, index: int) -> Non
 
 def generate_despatch_xml(organization: Organization, data: DespatchFormCreate) -> bytes:
     supplier, _ = organization_party(organization)
+    if data.shipment_method == "1" and not supplier.registration_number:
+        raise ValueError("Matični broj firme obavezan je za sopstveni prevoz")
     ET.register_namespace("", DESPATCH)
     root = ET.Element(f"{{{DESPATCH}}}DespatchAdvice")
     extensions = _element(root, CEC, "UBLExtensions")
@@ -264,16 +266,23 @@ def generate_despatch_xml(organization: Organization, data: DespatchFormCreate) 
         _element(shipment, CBC, "GrossWeightMeasure", data.gross_weight, unitCode="KGM")
     if data.package_count is not None:
         _element(shipment, CBC, "TotalTransportHandlingUnitQuantity", data.package_count)
-    if any((data.carrier_name, data.carrier_tax_id, data.vehicle_plate, data.driver_email)):
+    carrier = None
+    if data.shipment_method == "1":
+        carrier = supplier
+    elif data.shipment_method == "2":
+        carrier = PartyInput(
+            name=data.carrier_name or "",
+            tax_id=data.carrier_tax_id or "",
+            registration_number=data.carrier_registration_number,
+            address=data.despatch_address,
+        )
+    elif data.shipment_method == "3":
+        carrier = data.customer
+
+    if carrier is not None or any((data.vehicle_plate, data.driver_email)):
         stage = _element(shipment, CAC, "ShipmentStage")
         _element(stage, CBC, "ID", "1")
-        if data.carrier_name and data.carrier_tax_id:
-            carrier = PartyInput(
-                name=data.carrier_name,
-                tax_id=data.carrier_tax_id,
-                registration_number=data.carrier_registration_number,
-                address=data.despatch_address,
-            )
+        if carrier is not None:
             _party(stage, carrier, wrapper="CarrierParty", nested_party=False)
         if data.vehicle_plate:
             means = _element(stage, CAC, "TransportMeans")

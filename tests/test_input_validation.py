@@ -132,6 +132,17 @@ def test_document_form_uses_provider_discriminator_and_clear_carrier_error():
     assert "Naziv, PIB i matični broj prevoznika obavezni su" in errors[0]["msg"]
 
 
+def test_recipient_transport_requires_business_identifiers():
+    payload = despatch_data()
+    payload["shipment_method"] = "3"
+    payload["customer"] = {**payload["customer"], "registration_number": None}
+
+    with pytest.raises(
+        ValidationError, match="PIB od 9 cifara i matični broj primaoca obavezni su"
+    ):
+        TypeAdapter(DocumentFormCreate).validate_python(payload)
+
+
 def test_despatch_rejects_actual_despatch_before_issue_date():
     payload = despatch_data()
     payload.update(
