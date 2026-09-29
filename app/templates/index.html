@@ -6,8 +6,8 @@
   <meta name="color-scheme" content="light">
   <title>eDokumenti</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/app.css?v=0.8.18">
-  <link rel="stylesheet" href="/static/security.css?v=0.8.18">
+  <link rel="stylesheet" href="/static/app.css?v=0.8.19">
+  <link rel="stylesheet" href="/static/security.css?v=0.8.19">
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -77,11 +77,10 @@
           <div class="panel table-panel">
             <div class="toolbar">
               <div class="search"><span>⌕</span><input id="document-search" placeholder="Pretraži broj, kupca ili PIB"></div>
-              <select id="provider-filter" aria-label="Servis"><option value="">Svi servisi</option><option value="sef">SEF</option><option value="eotpremnice">eOtpremnice</option></select>
               <select id="status-filter" aria-label="Status"><option value="">Svi statusi</option><option value="draft">Nacrt</option><option value="queued">Na čekanju</option><option value="sent">Poslato</option><option value="delivered">Isporučeno</option><option value="accepted">Prihvaćeno</option><option value="rejected">Odbijeno</option><option value="error">Greška</option></select>
             </div>
             <div class="table-wrap">
-              <table><thead><tr><th>Dokument</th><th>Servis</th><th>Partner</th><th>Datum</th><th>Iznos</th><th>Status</th><th></th></tr></thead><tbody id="document-rows"></tbody></table>
+              <table><thead><tr><th>Dokument</th><th>Partner</th><th>Datum</th><th>Iznos</th><th>Status</th><th></th></tr></thead><tbody id="document-rows"></tbody></table>
               <div class="empty-state" id="documents-empty" hidden><strong>Nema dokumenata</strong><p>Kreirajte prvi dokument ili sačekajte automatsku sinhronizaciju.</p></div>
             </div>
           </div>
@@ -196,6 +195,6 @@
       <div class="dialog-actions"><button class="primary" type="submit">Promeni lozinku</button></div>
     </form>
   </dialog>
-  <script src="/static/app.js?v=0.8.18" defer></script>
+  <script src="/static/app.js?v=0.8.19" defer></script>
 </body>
 </html>

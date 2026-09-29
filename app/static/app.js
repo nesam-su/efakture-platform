@@ -183,10 +183,6 @@ async function loadDocuments() {
 
 function renderDocuments() {
   const search = $("#document-search").value.trim().toLowerCase();
-  const providerFilter = $("#provider-filter");
-  providerFilter.value = state.documentScope === "despatch" ? "eotpremnice" : "sef";
-  providerFilter.disabled = true;
-  const provider = providerFilter.value;
   const status = $("#status-filter").value;
   const scoped = state.documents.filter(doc => {
     if (state.documentScope === "inbound") return doc.provider === "sef" && doc.direction === "inbound" && doc.document_type === "purchase_invoice";
@@ -195,7 +191,7 @@ function renderDocuments() {
   });
   const filtered = scoped.filter(doc => {
     const text = `${doc.document_number || ""} ${doc.counterparty_name || ""} ${doc.counterparty_tax_id || ""}`.toLowerCase();
-    return (!search || text.includes(search)) && (!provider || doc.provider === provider) && (!status || doc.status === status);
+    return (!search || text.includes(search)) && (!status || doc.status === status);
   });
   const headings = {
     inbound: ["Primljene fakture", "Fakture dobavljača automatski preuzete sa SEF-a."],
@@ -206,7 +202,6 @@ function renderDocuments() {
   $("#documents-description").textContent = headings[state.documentScope][1];
   $("#document-rows").innerHTML = filtered.map(doc => `<tr>
     <td><strong>${escapeHtml(doc.document_number || documentTypeNames[doc.document_type] || doc.document_type)}</strong><small>${escapeHtml(documentTypeNames[doc.document_type] || doc.document_type)} · ${doc.document_type === "purchase_invoice" ? "primljena" : doc.document_type === "sales_invoice" ? "poslata" : doc.direction === "outbound" ? "izlazna" : "ulazna"}</small></td>
-    <td><span class="service ${doc.provider}">${doc.provider === "sef" ? "SEF" : "eOtpremnice"}</span></td>
     <td><strong>${escapeHtml(doc.counterparty_name || "—")}</strong><small>${escapeHtml(doc.counterparty_tax_id || "")}</small></td>
     <td>${formatDate(doc.issue_date || doc.created_at)}</td><td>${formatAmount(doc.total_amount, doc.currency)}</td>
     <td><span class="status ${doc.status}">${escapeHtml(documentStatusName(doc))}</span><small>${escapeHtml(remoteStatusName(doc.remote_status))}</small></td>
@@ -410,14 +405,14 @@ function printDocument(doc, preview, existingPopup = null) {
   const vatSummary = vatRows.length ? `<table class="vat-table"><thead><tr><th>PDV stopa</th><th class="right">Osnovica</th><th class="right">PDV iznos</th></tr></thead><tbody>${vatRows.map(group => `<tr><td>${escapeHtml(vatNames[`${group.rate}:${group.category}`] || `${group.rate}%`)}</td><td class="right">${formatAmount(group.base, currency)}</td><td class="right">${formatAmount(group.vat, currency)}</td></tr>`).join("")}</tbody></table>` : "";
   const paymentBlock = preview.paymentAccount || preview.paymentReference ? `<section class="section payment"><h2>Podaci za plaćanje</h2><div class="payment-grid">${preview.paymentAccount ? `<div><span>Račun za uplatu</span><strong>${escapeHtml(preview.paymentAccount)}</strong></div>` : ""}${preview.paymentReference ? `<div><span>Poziv na broj</span><strong>${escapeHtml(preview.paymentReference)}</strong></div>` : ""}</div></section>` : "";
   popup.document.open();
-  popup.document.write(`<!doctype html><html lang="sr-Latn"><head><meta charset="utf-8"><title>${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</title><link rel="stylesheet" href="${escapeHtml(location.origin)}/static/print.css?v=0.8.18"></head><body><div class="print-toolbar"><strong>Pregled štampe · ${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</strong><div class="print-actions"><button id="close-print" type="button">Zatvori</button><button class="primary" id="print-now" type="button">Štampaj dokument</button></div></div>
+  popup.document.write(`<!doctype html><html lang="sr-Latn"><head><meta charset="utf-8"><title>${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</title><link rel="stylesheet" href="${escapeHtml(location.origin)}/static/print.css?v=0.8.19"></head><body><div class="print-toolbar"><strong>Pregled štampe · ${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</strong><div class="print-actions"><button id="close-print" type="button">Zatvori</button><button class="primary" id="print-now" type="button">Štampaj dokument</button></div></div>
     <header class="document-header"><div class="brand"><p class="eyebrow">IZDAVALAC DOKUMENTA</p><strong>${escapeHtml(preview.issuer.name)}</strong><span class="muted">PIB: ${escapeHtml(preview.issuer.taxId || "—")}</span></div><div class="document-id"><h1>${escapeHtml(documentLabel)}</h1><span class="number">Broj: ${escapeHtml(preview.number)}</span><span class="status">${escapeHtml(documentStatusName(doc))}</span></div></header>
     <table class="meta-table"><tr><td><span>Datum izdavanja</span><strong>${formatDate(preview.issueDate)}</strong></td><td><span>${invoice ? "Datum dospeća" : "Datum isporuke"}</span><strong>${formatDate(preview.dueDate)}</strong></td><td><span>Valuta</span><strong>${escapeHtml(currency)}</strong></td><td><span>Servis</span><strong>${escapeHtml(doc.provider === "sef" ? "SEF" : "eOtpremnice")}</strong></td></tr></table>
     <section class="parties"><div class="party"><span>${partyLabel}</span><strong>${escapeHtml(preview.issuer.name)}</strong><small>PIB: ${escapeHtml(preview.issuer.taxId || "—")}</small><small>${escapeHtml(preview.issuer.address || "Adresa nije navedena")}</small></div><div class="party"><span>${recipientLabel}</span><strong>${escapeHtml(preview.recipient.name)}</strong><small>PIB: ${escapeHtml(preview.recipient.taxId || "—")}</small><small>${escapeHtml(preview.recipient.address || "Adresa nije navedena")}</small></div></section>
     <section class="section"><h2>Stavke dokumenta</h2>${preview.lines.length ? `<table class="items"><thead><tr>${itemHeader}</tr></thead><tbody>${itemRows}</tbody></table>` : '<p class="muted">Nema stavki dostupnih za prikaz.</p>'}</section>
     ${invoice ? `<section class="calculation"><div><h2>Pregled PDV-a</h2>${vatSummary || '<p class="muted">PDV obračun nije dostupan.</p>'}</div><div class="totals"><div class="totals-row"><span>Osnovica</span><span>${formatAmount(subtotal, currency)}</span></div><div class="totals-row"><span>PDV</span><span>${formatAmount(vatTotal, currency)}</span></div><div class="totals-row"><span>UKUPNO ZA PLAĆANJE</span><span>${formatAmount(preview.total, currency)}</span></div></div></section>${paymentBlock}` : ""}
     ${preview.note ? `<section class="section note"><h2>Napomena</h2><p>${escapeHtml(preview.note)}</p></section>` : ""}
-    <footer class="footer"><span>Dokument pripremljen u aplikaciji eDokumenti · šablon 0.8.18</span><span>${escapeHtml(documentLabel)} · ${escapeHtml(preview.number)}</span></footer>
+    <footer class="footer"><span>Dokument pripremljen u aplikaciji eDokumenti · šablon 0.8.19</span><span>${escapeHtml(documentLabel)} · ${escapeHtml(preview.number)}</span></footer>
   </body></html>`);
   popup.document.close();
   popup.document.querySelector("#print-now").onclick = () => popup.print();
@@ -860,7 +855,7 @@ $("#logout").onclick = async () => { try { await api("/api/v1/auth/logout", {met
 $("#menu-button").onclick = () => $(".sidebar").classList.toggle("open");
 $$('.close-dialog').forEach(button => button.onclick = () => button.closest("dialog").close());
 $$('.nav-item[data-view]').forEach(button => button.onclick = () => button.dataset.documentScope ? showDocumentScope(button.dataset.documentScope) : showView(button.dataset.view));
-[$("#document-search"), $("#provider-filter"), $("#status-filter")].forEach(control => control.addEventListener("input", renderDocuments));
+[$("#document-search"), $("#status-filter")].forEach(control => control.addEventListener("input", renderDocuments));
 $("#customer-search").addEventListener("input", renderCustomers);
 $("#item-search").addEventListener("input", renderCatalogItems);
 

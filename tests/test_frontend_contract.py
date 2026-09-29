@@ -20,7 +20,7 @@ def test_frontend_uses_provider_specific_send_labels():
     assert 'return provider === "sef" ? "SEF" : "eOtpremnice"' in script
     assert "Pošalji u red" not in script
     assert "Pošalji u red" not in template
-    assert '/static/app.js?v=0.8.18' in template
+    assert '/static/app.js?v=0.8.19' in template
 
 
 def test_frontend_separates_inbound_and_outbound_invoices_in_sidebar():
@@ -61,7 +61,7 @@ def test_print_layout_has_professional_invoice_sections():
     assert 'Podaci za plaćanje' in script
     assert 'print-color-adjust: exact' in print_styles
     assert 'thead { display: table-header-group; }' in print_styles
-    assert '/static/print.css?v=0.8.18' in script
+    assert '/static/print.css?v=0.8.19' in script
     assert (
         ".party:first-child { border-right: 0; border-bottom: 0; border-left: 0; }"
         in print_styles
@@ -105,3 +105,14 @@ def test_new_document_follows_active_scope_and_reveals_saved_document():
     )
     assert 'sessionStorage.setItem(documentScopeKey, state.documentScope)' in script
     assert '$("#document-search").value = ""; $("#status-filter").value = "";' in script
+
+
+def test_document_lists_do_not_show_redundant_service_column():
+    script = (PROJECT_ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
+    template = (PROJECT_ROOT / "app" / "templates" / "index.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "<th>Servis</th>" not in template
+    assert 'id="provider-filter"' not in template
+    assert 'class="service ${doc.provider}"' not in script
