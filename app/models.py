@@ -226,6 +226,27 @@ class CatalogItem(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class DocumentTemplate(Base, TimestampMixin):
+    __tablename__ = "document_templates"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "provider", "name"),
+        Index("ix_document_template_org_provider", "organization_id", "provider"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(200))
+    provider: Mapped[Provider] = mapped_column(Enum(Provider, name="document_template_provider"))
+    document_type: Mapped[str] = mapped_column(String(80))
+    template_data: Mapped[dict] = mapped_column(JSONB, default=dict)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
 class Membership(Base, TimestampMixin):
     __tablename__ = "memberships"
     __table_args__ = (UniqueConstraint("organization_id", "user_id"),)

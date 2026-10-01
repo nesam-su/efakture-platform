@@ -6,8 +6,8 @@
   <meta name="color-scheme" content="light">
   <title>eDokumenti</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/app.css?v=0.8.21">
-  <link rel="stylesheet" href="/static/security.css?v=0.8.21">
+  <link rel="stylesheet" href="/static/app.css?v=0.8.22">
+  <link rel="stylesheet" href="/static/security.css?v=0.8.22">
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -108,6 +108,15 @@
   <dialog id="document-dialog" class="document-workspace">
     <form id="document-form">
       <div class="dialog-heading"><div><p class="eyebrow" id="document-dialog-eyebrow">NOVI POSLOVNI DOKUMENT</p><h2 id="document-dialog-title">Unos bez XML-a</h2></div><button type="button" class="icon-button close-dialog" aria-label="Zatvori">×</button></div>
+      <div class="template-toolbar">
+        <label>Šablon firme<select id="document-template-select"><option value="">Bez šablona</option></select></label>
+        <button type="button" class="secondary" id="apply-document-template">Primeni</button>
+        <button type="button" class="secondary" id="save-document-template">+ Sačuvaj kao novi</button>
+        <button type="button" class="secondary" id="update-document-template" hidden>Ažuriraj</button>
+        <button type="button" class="secondary danger-text" id="delete-document-template" hidden>Obriši</button>
+        <button type="button" class="secondary" id="clear-document-draft">Očisti unos</button>
+        <small class="template-status" id="document-autosave-status">Automatski nacrt je uključen.</small>
+      </div>
       <div class="form-grid">
         <label>Servis<select name="provider" required><option value="sef">SEF eFakture</option><option value="eotpremnice">eOtpremnice</option></select></label>
         <label>Broj dokumenta<input name="document_number" required minlength="3" maxlength="100" title="Broj dokumenta mora imati najmanje 3 znaka"></label>
@@ -196,6 +205,6 @@
       <div class="dialog-actions"><button class="primary" type="submit">Promeni lozinku</button></div>
     </form>
   </dialog>
-  <script src="/static/app.js?v=0.8.21" defer></script>
+  <script src="/static/app.js?v=0.8.22" defer></script>
 </body>
 </html>

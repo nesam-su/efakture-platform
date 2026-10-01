@@ -65,6 +65,7 @@ from app.models import (
     Direction,
     DocumentArtifact,
     DocumentStatus,
+    DocumentTemplate,
     ExternalEvent,
     IntegrationCredential,
     JobStatus,
@@ -93,6 +94,8 @@ from app.schemas import (
     DocumentCreate,
     DocumentFormCreate,
     DocumentOut,
+    DocumentTemplateInput,
+    DocumentTemplateOut,
     ExternalEventOut,
     InvitationAccept,
     InvitationCreate,
@@ -996,6 +999,133 @@ async def update_catalog_item(
         raise HTTPException(status_code=409, detail="Artikal sa tom šifrom već postoji") from None
     await db.refresh(item)
     return item
+
+
+@router.get("/document-templates", response_model=list[DocumentTemplateOut])
+async def list_document_templates(
+    provider: Provider | None = None,
+    context: TenantContext = Depends(tenant_context),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(DocumentTemplate).where(
+        DocumentTemplate.organization_id == context.organization_id,
+        DocumentTemplate.is_active.is_(True),
+    )
+    if provider is not None:
+        query = query.where(DocumentTemplate.provider == provider)
+    return list((await db.scalars(query.order_by(DocumentTemplate.name))).all())
+
+
+@router.post(
+    "/document-templates",
+    response_model=DocumentTemplateOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_document_template(
+    data: DocumentTemplateInput,
+    context: TenantContext = Depends(
+        require_roles(Role.owner, Role.admin, Role.accountant, Role.operator)
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    template = DocumentTemplate(
+        organization_id=context.organization_id,
+        created_by_user_id=context.user.id,
+        **data.model_dump(),
+    )
+    db.add(template)
+    try:
+        await db.flush()
+        db.add(
+            AuditEvent(
+                organization_id=context.organization_id,
+                actor_user_id=context.user.id,
+                action="document_template.create",
+                entity_type="document_template",
+                entity_id=str(template.id),
+                details={"name": template.name, "provider": template.provider.value},
+            )
+        )
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409, detail="Šablon sa tim nazivom već postoji"
+        ) from None
+    await db.refresh(template)
+    return template
+
+
+@router.put("/document-templates/{template_id}", response_model=DocumentTemplateOut)
+async def update_document_template(
+    template_id: UUID,
+    data: DocumentTemplateInput,
+    context: TenantContext = Depends(
+        require_roles(Role.owner, Role.admin, Role.accountant, Role.operator)
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    template = await db.scalar(
+        select(DocumentTemplate).where(
+            DocumentTemplate.id == template_id,
+            DocumentTemplate.organization_id == context.organization_id,
+            DocumentTemplate.is_active.is_(True),
+        )
+    )
+    if template is None:
+        raise HTTPException(status_code=404, detail="Šablon nije pronađen")
+    for field, value in data.model_dump().items():
+        setattr(template, field, value)
+    try:
+        db.add(
+            AuditEvent(
+                organization_id=context.organization_id,
+                actor_user_id=context.user.id,
+                action="document_template.update",
+                entity_type="document_template",
+                entity_id=str(template.id),
+                details={"name": template.name, "provider": template.provider.value},
+            )
+        )
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409, detail="Šablon sa tim nazivom već postoji"
+        ) from None
+    await db.refresh(template)
+    return template
+
+
+@router.delete("/document-templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_document_template(
+    template_id: UUID,
+    context: TenantContext = Depends(
+        require_roles(Role.owner, Role.admin, Role.accountant, Role.operator)
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    template = await db.scalar(
+        select(DocumentTemplate).where(
+            DocumentTemplate.id == template_id,
+            DocumentTemplate.organization_id == context.organization_id,
+            DocumentTemplate.is_active.is_(True),
+        )
+    )
+    if template is None:
+        raise HTTPException(status_code=404, detail="Šablon nije pronađen")
+    template.is_active = False
+    db.add(
+        AuditEvent(
+            organization_id=context.organization_id,
+            actor_user_id=context.user.id,
+            action="document_template.archive",
+            entity_type="document_template",
+            entity_id=str(template.id),
+            details={"name": template.name, "provider": template.provider.value},
+        )
+    )
+    await db.commit()
 
 
 @router.get("/integrations", response_model=list[CredentialOut])

@@ -143,6 +143,17 @@ Trenutna forma pokriva standardnu izlaznu fakturu i standardnu eksternu/internu
 otpremnicu. Napredni poreski scenariji biće dodavani kao posebni tipovi dokumenata,
 da se obavezna polja ne mešaju sa uobičajenim unosom.
 
+### Automatski nacrti i šabloni
+
+Nezavršen unos se automatski čuva u browseru odvojeno po korisniku, firmi i servisu i
+vraća pri sledećem otvaranju forme. Dugme `Očisti unos` uklanja taj automatski nacrt.
+
+Ponovljivi podaci mogu se sačuvati kao imenovani šablon firme. Šabloni se čuvaju u bazi,
+dostupni su ovlašćenim korisnicima iste firme i mogu da sadrže kupca, stavke, adrese,
+transport, valutu, račun i napomene. Jedinstveni broj dokumenta, broj pošiljke i stari
+datumi se ne kopiraju. Rok dospeća čuva se kao broj dana. Za novi dokument se račun firme
+i adresa otpreme unapred popunjavaju iz poslovnog profila, a šablon ih može zameniti.
+
 ## Ručni tok slanja dokumenta
 
 1. Kreirati dokument preko `POST /api/v1/documents`.

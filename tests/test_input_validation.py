@@ -8,6 +8,7 @@ from app.schemas import (
     CustomerInput,
     DocumentFormCreate,
     DocumentOut,
+    DocumentTemplateInput,
     InvoiceFormCreate,
     OrganizationCreate,
 )
@@ -99,6 +100,32 @@ def test_document_number_requires_at_least_three_visible_characters():
 
     document = InvoiceFormCreate(**invoice_data("  FA-1  "))
     assert document.document_number == "FA-1"
+
+
+def test_document_template_matches_provider_and_limits_payload_size():
+    template = DocumentTemplateInput(
+        name="Interna otpremnica - glavni magacin",
+        provider="eotpremnice",
+        document_type="despatch_advice",
+        template_data={"values": {"despatch_city": "Subotica"}},
+    )
+    assert template.template_data["values"]["despatch_city"] == "Subotica"
+
+    with pytest.raises(ValidationError, match="Vrsta šablona ne odgovara"):
+        DocumentTemplateInput(
+            name="Pogrešan tip",
+            provider="sef",
+            document_type="despatch_advice",
+            template_data={},
+        )
+
+    with pytest.raises(ValidationError, match="Šablon je prevelik"):
+        DocumentTemplateInput(
+            name="Prevelik šablon",
+            provider="sef",
+            document_type="sales_invoice",
+            template_data={"note": "x" * 200_001},
+        )
 
 
 def test_document_output_keeps_legacy_short_document_numbers_visible():

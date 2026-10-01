@@ -2,9 +2,11 @@ const tokenKey = "edokumenti_access_token";
 const organizationKey = "edokumenti_organization_id";
 const documentScopeKey = "edokumenti_document_scope";
 const savedDocumentScope = sessionStorage.getItem(documentScopeKey);
-const state = {organizations: [], organization: null, documents: [], documentAttentionCounts: {inbound:0,outbound:0,receipt:0,despatch:0}, customers: [], items: [], jobs: [], events: [], members: [], sessions: [], integrations: [], documentScope: ["inbound", "outbound", "receipt", "despatch"].includes(savedDocumentScope) ? savedDocumentScope : "inbound"};
+const state = {organizations: [], organization: null, documents: [], documentAttentionCounts: {inbound:0,outbound:0,receipt:0,despatch:0}, documentTemplates: [], customers: [], items: [], jobs: [], events: [], members: [], sessions: [], integrations: [], documentScope: ["inbound", "outbound", "receipt", "despatch"].includes(savedDocumentScope) ? savedDocumentScope : "inbound"};
 const autoRefreshIntervalMs = 5000;
 let autoRefreshBusy = false;
+let documentDraftTimer = null;
+let suspendDocumentAutosave = false;
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -183,7 +185,7 @@ async function initializeApp() {
 
 async function loadWorkspace() {
   renderOrganizationProfile();
-  const loaders = [loadDocuments(), loadCustomers(), loadCatalogItems(), loadJobs(), loadEvents(), loadMembers(), loadSessions(), loadIntegrations()];
+  const loaders = [loadDocuments(), loadDocumentTemplates(), loadCustomers(), loadCatalogItems(), loadJobs(), loadEvents(), loadMembers(), loadSessions(), loadIntegrations()];
   const results = await Promise.allSettled(loaders);
   const failed = results.find(result => result.status === "rejected");
   if (failed) showToast(failed.reason.message, true);
@@ -222,6 +224,28 @@ async function loadDocuments() {
   state.documents = documents;
   state.documentAttentionCounts = counts;
   renderDocuments();
+}
+
+async function loadDocumentTemplates() {
+  state.documentTemplates = await api("/api/v1/document-templates");
+  populateDocumentTemplateSelector();
+}
+
+function populateDocumentTemplateSelector(preferredId = "") {
+  const select = $("#document-template-select");
+  if (!select) return;
+  const provider = $("#document-form").elements.provider.value;
+  const templates = state.documentTemplates.filter(item => item.provider === provider);
+  select.innerHTML = '<option value="">Bez šablona</option>' + templates.map(item => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join("");
+  if (templates.some(item => item.id === preferredId)) select.value = preferredId;
+  updateDocumentTemplateActions();
+}
+
+function updateDocumentTemplateActions() {
+  const selected = Boolean($("#document-template-select")?.value);
+  $("#apply-document-template").disabled = !selected;
+  $("#update-document-template").hidden = !selected;
+  $("#delete-document-template").hidden = !selected;
 }
 
 function renderDocuments() {
@@ -451,14 +475,14 @@ function printDocument(doc, preview, existingPopup = null) {
   const vatSummary = vatRows.length ? `<table class="vat-table"><thead><tr><th>PDV stopa</th><th class="right">Osnovica</th><th class="right">PDV iznos</th></tr></thead><tbody>${vatRows.map(group => `<tr><td>${escapeHtml(vatNames[`${group.rate}:${group.category}`] || `${group.rate}%`)}</td><td class="right">${formatAmount(group.base, currency)}</td><td class="right">${formatAmount(group.vat, currency)}</td></tr>`).join("")}</tbody></table>` : "";
   const paymentBlock = preview.paymentAccount || preview.paymentReference ? `<section class="section payment"><h2>Podaci za plaćanje</h2><div class="payment-grid">${preview.paymentAccount ? `<div><span>Račun za uplatu</span><strong>${escapeHtml(preview.paymentAccount)}</strong></div>` : ""}${preview.paymentReference ? `<div><span>Poziv na broj</span><strong>${escapeHtml(preview.paymentReference)}</strong></div>` : ""}</div></section>` : "";
   popup.document.open();
-  popup.document.write(`<!doctype html><html lang="sr-Latn"><head><meta charset="utf-8"><title>${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</title><link rel="stylesheet" href="${escapeHtml(location.origin)}/static/print.css?v=0.8.21"></head><body><div class="print-toolbar"><strong>Pregled štampe · ${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</strong><div class="print-actions"><button id="close-print" type="button">Zatvori</button><button class="primary" id="print-now" type="button">Štampaj dokument</button></div></div>
+  popup.document.write(`<!doctype html><html lang="sr-Latn"><head><meta charset="utf-8"><title>${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</title><link rel="stylesheet" href="${escapeHtml(location.origin)}/static/print.css?v=0.8.22"></head><body><div class="print-toolbar"><strong>Pregled štampe · ${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</strong><div class="print-actions"><button id="close-print" type="button">Zatvori</button><button class="primary" id="print-now" type="button">Štampaj dokument</button></div></div>
     <header class="document-header"><div class="brand"><p class="eyebrow">IZDAVALAC DOKUMENTA</p><strong>${escapeHtml(preview.issuer.name)}</strong><span class="muted">PIB: ${escapeHtml(preview.issuer.taxId || "—")}</span></div><div class="document-id"><h1>${escapeHtml(documentLabel)}</h1><span class="number">Broj: ${escapeHtml(preview.number)}</span><span class="status">${escapeHtml(documentStatusName(doc))}</span></div></header>
     <table class="meta-table"><tr><td><span>Datum izdavanja</span><strong>${formatDate(preview.issueDate)}</strong></td><td><span>${invoice ? "Datum dospeća" : "Datum isporuke"}</span><strong>${formatDate(preview.dueDate)}</strong></td><td><span>Valuta</span><strong>${escapeHtml(currency)}</strong></td><td><span>Servis</span><strong>${escapeHtml(doc.provider === "sef" ? "SEF" : "eOtpremnice")}</strong></td></tr></table>
     <section class="parties"><div class="party"><span>${partyLabel}</span><strong>${escapeHtml(preview.issuer.name)}</strong><small>PIB: ${escapeHtml(preview.issuer.taxId || "—")}</small><small>${escapeHtml(preview.issuer.address || "Adresa nije navedena")}</small></div><div class="party"><span>${recipientLabel}</span><strong>${escapeHtml(preview.recipient.name)}</strong><small>PIB: ${escapeHtml(preview.recipient.taxId || "—")}</small><small>${escapeHtml(preview.recipient.address || "Adresa nije navedena")}</small></div></section>
     <section class="section"><h2>Stavke dokumenta</h2>${preview.lines.length ? `<table class="items"><thead><tr>${itemHeader}</tr></thead><tbody>${itemRows}</tbody></table>` : '<p class="muted">Nema stavki dostupnih za prikaz.</p>'}</section>
     ${invoice ? `<section class="calculation"><div><h2>Pregled PDV-a</h2>${vatSummary || '<p class="muted">PDV obračun nije dostupan.</p>'}</div><div class="totals"><div class="totals-row"><span>Osnovica</span><span>${formatAmount(subtotal, currency)}</span></div><div class="totals-row"><span>PDV</span><span>${formatAmount(vatTotal, currency)}</span></div><div class="totals-row"><span>UKUPNO ZA PLAĆANJE</span><span>${formatAmount(preview.total, currency)}</span></div></div></section>${paymentBlock}` : ""}
     ${preview.note ? `<section class="section note"><h2>Napomena</h2><p>${escapeHtml(preview.note)}</p></section>` : ""}
-    <footer class="footer"><span>Dokument pripremljen u aplikaciji eDokumenti · šablon 0.8.21</span><span>${escapeHtml(documentLabel)} · ${escapeHtml(preview.number)}</span></footer>
+    <footer class="footer"><span>Dokument pripremljen u aplikaciji eDokumenti · šablon 0.8.22</span><span>${escapeHtml(documentLabel)} · ${escapeHtml(preview.number)}</span></footer>
   </body></html>`);
   popup.document.close();
   popup.document.querySelector("#print-now").onclick = () => popup.print();
@@ -687,7 +711,7 @@ function addDocumentLine(line = null) {
   const row = document.createElement("div"); row.className = "document-line";
   const itemOptions = state.items.map(item => `<option value="${item.id}">${escapeHtml(item.name)} · ${escapeHtml(item.sku)}</option>`).join("");
   row.innerHTML = `<div class="line-heading"><strong>Stavka ${documentLineSequence}</strong><button type="button" class="icon-button remove-line" aria-label="Ukloni stavku">×</button></div><div class="form-grid"><label class="span-2">Izaberite artikal ili uslugu<select class="line-item-picker"><option value="">Ručni unos</option>${itemOptions}</select></label><label class="span-2">Naziv<input name="line_name" required maxlength="300"></label><label>Šifra artikla<input name="line_sku" maxlength="100"></label><label>GTIN<input name="line_gtin" maxlength="30"></label><label>Količina<input name="line_quantity" type="number" min="0.000001" step="0.000001" value="1" required></label><label>Jedinica mere<select name="line_unit" required><option value="H87">Komad</option><option value="KGM">Kilogram</option><option value="LTR">Litar</option><option value="MTR">Metar</option><option value="MTK">m²</option><option value="MTQ">m³</option><option value="HUR">Sat</option><option value="DAY">Dan</option><option value="XPK">Paket</option></select></label><label class="invoice-line-field">Cena bez PDV<input name="line_price" type="number" min="0" step="0.01" required></label><label class="invoice-line-field">PDV<select name="line_vat_choice"><option value="20:S">20%</option><option value="10:S">10%</option><option value="0:Z">0%</option><option value="0:O">Nije u PDV sistemu</option><option value="0:E">Oslobođeno PDV-a</option></select></label><label class="span-2">Opis <span class="optional">(opciono)</span><input name="line_description" maxlength="1000"></label></div>`;
-  row.querySelector(".remove-line").onclick = () => { if ($$(".document-line").length > 1) row.remove(); };
+  row.querySelector(".remove-line").onclick = () => { if ($$(".document-line").length > 1) { row.remove(); scheduleAutomaticDocumentDraft(); } };
   row.querySelector(".line-item-picker").onchange = event => {
     const item = state.items.find(candidate => candidate.id === event.target.value);
     if (!item) return;
@@ -702,8 +726,8 @@ function addDocumentLine(line = null) {
 }
 
 function toggleDocumentType() {
-  const provider = $("#document-form [name=provider]").value; const invoice = provider === "sef";
-  const issueDate = $("#document-form").elements.issue_date;
+  const form = $("#document-form"); const provider = form.elements.provider.value; const invoice = provider === "sef";
+  const issueDate = form.elements.issue_date; const profile = state.organization?.profile || {};
   issueDate.readOnly = !invoice;
   issueDate.min = invoice ? "" : serbianCalendarDate(); issueDate.max = invoice ? "" : serbianCalendarDate();
   if (!invoice) issueDate.value = serbianCalendarDate();
@@ -715,8 +739,14 @@ function toggleDocumentType() {
     field.querySelectorAll("input,select").forEach(control => { control.disabled = !invoice; });
   });
   ["shipment_id", "planned_despatch_at", "actual_despatch_at", "planned_delivery_at", "despatch_street", "despatch_city", "despatch_postal_code", "despatch_country_code", "delivery_street", "delivery_city", "delivery_postal_code", "delivery_country_code"].forEach(name => { $("#document-form").elements[name].required = !invoice; });
+  if (invoice && !form.elements.payment_account.value && profile.bank_account) form.elements.payment_account.value = profile.bank_account;
+  if (!invoice) {
+    const defaults = {despatch_street:profile.street,despatch_city:profile.city,despatch_postal_code:profile.postal_code,despatch_country_code:profile.country_code || "RS"};
+    Object.entries(defaults).forEach(([name, value]) => { if (!form.elements[name].value && value) form.elements[name].value = value; });
+  }
   ensureDespatchDateDefaults(); syncDespatchDateConstraints();
   toggleCarrierRequirements();
+  populateDocumentTemplateSelector($("#document-template-select")?.value || "");
 }
 
 function toggleCarrierRequirements() {
@@ -752,11 +782,165 @@ function documentLines(provider) {
   });
 }
 
+function documentDraftOwner() {
+  try {
+    const encoded = sessionStorage.getItem(tokenKey)?.split(".")[1] || "";
+    const normalized = encoded.replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=")));
+    return payload.sub || "unknown";
+  } catch { return "unknown"; }
+}
+
+function documentDraftKey(provider) {
+  return `edokumenti_form_draft:${documentDraftOwner()}:${state.organization?.id || "none"}:${provider}`;
+}
+
+function daysBetween(first, second) {
+  if (!first || !second) return null;
+  const start = new Date(`${first}T00:00:00`); const end = new Date(`${second}T00:00:00`);
+  if (Number.isNaN(start.valueOf()) || Number.isNaN(end.valueOf())) return null;
+  return Math.max(0, Math.round((end - start) / 86400000));
+}
+
+function captureDocumentFormState({forTemplate = false} = {}) {
+  const form = $("#document-form"); const values = {};
+  const templateExcluded = new Set(["document_number", "issue_date", "delivery_date", "due_date", "shipment_id", "order_reference", "planned_despatch_at", "actual_despatch_at", "planned_delivery_at", "queue_after_create"]);
+  form.querySelectorAll("[name]").forEach(control => {
+    if (control.closest(".document-line") || ["BUTTON", "FIELDSET"].includes(control.tagName)) return;
+    if (forTemplate && templateExcluded.has(control.name)) return;
+    values[control.name] = control.type === "checkbox" ? control.checked : control.value;
+  });
+  const lines = $$(".document-line").map(row => Object.fromEntries(
+    [...row.querySelectorAll("[name]")].map(control => [control.name, control.value])
+  ));
+  return {
+    version: 1,
+    provider: form.elements.provider.value,
+    values,
+    lines,
+    customer_id: $("#document-customer-select").value || null,
+    due_days: forTemplate ? daysBetween(form.elements.issue_date.value, form.elements.due_date.value) : null,
+    delivery_days: forTemplate ? daysBetween(form.elements.issue_date.value, form.elements.delivery_date.value) : null,
+  };
+}
+
+function addDays(dateValue, days) {
+  const date = new Date(`${dateValue}T12:00:00`);
+  date.setDate(date.getDate() + Number(days || 0));
+  return date.toISOString().slice(0, 10);
+}
+
+function applyDocumentFormState(snapshot, {fromTemplate = false} = {}) {
+  if (!snapshot?.values) return false;
+  const form = $("#document-form"); suspendDocumentAutosave = true;
+  try {
+    form.elements.provider.value = snapshot.provider || form.elements.provider.value;
+    toggleDocumentType();
+    Object.entries(snapshot.values).forEach(([name, value]) => {
+      const control = form.elements[name]; if (!control) return;
+      if (control.type === "checkbox") control.checked = Boolean(value);
+      else control.value = value ?? "";
+    });
+    if (fromTemplate) {
+      const today = serbianCalendarDate();
+      form.elements.issue_date.value = today;
+      if (form.elements.provider.value === "sef") {
+        form.elements.delivery_date.value = addDays(today, snapshot.delivery_days);
+        form.elements.due_date.value = addDays(today, snapshot.due_days ?? 15);
+      } else {
+        ensureDespatchDateDefaults();
+      }
+    }
+    documentLineSequence = 0; $("#document-lines").innerHTML = "";
+    (snapshot.lines || []).forEach(line => {
+      addDocumentLine(); const row = $$(".document-line").at(-1);
+      Object.entries(line).forEach(([name, value]) => {
+        const control = row.querySelector(`[name=${name}]`); if (control) control.value = value ?? "";
+      });
+    });
+    if (!snapshot.lines?.length) addDocumentLine();
+    $("#document-customer-select").value = snapshot.customer_id || "";
+    toggleDocumentType(); syncDespatchDateConstraints();
+    return true;
+  } finally { suspendDocumentAutosave = false; }
+}
+
+function saveAutomaticDocumentDraft() {
+  if (suspendDocumentAutosave || editingDocumentId || !$("#document-dialog").open) return;
+  const snapshot = captureDocumentFormState();
+  localStorage.setItem(documentDraftKey(snapshot.provider), JSON.stringify(snapshot));
+  $("#document-autosave-status").textContent = `Automatski nacrt sačuvan u ${new Intl.DateTimeFormat("sr-Latn-RS", {hour:"2-digit",minute:"2-digit"}).format(new Date())}.`;
+}
+
+function scheduleAutomaticDocumentDraft() {
+  clearTimeout(documentDraftTimer);
+  documentDraftTimer = setTimeout(saveAutomaticDocumentDraft, 500);
+}
+
+function restoreAutomaticDocumentDraft(provider) {
+  try {
+    const snapshot = JSON.parse(localStorage.getItem(documentDraftKey(provider)) || "null");
+    if (!snapshot || !applyDocumentFormState(snapshot)) return false;
+    $("#document-autosave-status").textContent = "Vraćen je poslednji automatski nacrt.";
+    return true;
+  } catch {
+    localStorage.removeItem(documentDraftKey(provider));
+    return false;
+  }
+}
+
+function clearAutomaticDocumentDraft(provider) {
+  localStorage.removeItem(documentDraftKey(provider));
+}
+
+function selectedDocumentTemplate() {
+  const id = $("#document-template-select").value;
+  return state.documentTemplates.find(item => item.id === id);
+}
+
+function documentTemplatePayload(name) {
+  const provider = $("#document-form").elements.provider.value;
+  return {
+    name,
+    provider,
+    document_type: provider === "sef" ? "sales_invoice" : "despatch_advice",
+    template_data: captureDocumentFormState({forTemplate:true}),
+  };
+}
+
+async function saveNewDocumentTemplate() {
+  const name = prompt("Naziv novog šablona:", "");
+  if (!name?.trim()) return;
+  try {
+    const created = await api("/api/v1/document-templates", {method:"POST", body:JSON.stringify(documentTemplatePayload(name.trim()))});
+    await loadDocumentTemplates(); populateDocumentTemplateSelector(created.id);
+    showToast("Šablon je sačuvan i dostupan korisnicima firme.");
+  } catch (error) { showToast(error.message, true); }
+}
+
+async function updateSelectedDocumentTemplate() {
+  const template = selectedDocumentTemplate(); if (!template) return;
+  try {
+    await api(`/api/v1/document-templates/${template.id}`, {method:"PUT", body:JSON.stringify(documentTemplatePayload(template.name))});
+    await loadDocumentTemplates(); populateDocumentTemplateSelector(template.id);
+    showToast("Šablon je ažuriran trenutnim unosom.");
+  } catch (error) { showToast(error.message, true); }
+}
+
+async function deleteSelectedDocumentTemplate() {
+  const template = selectedDocumentTemplate(); if (!template || !confirm(`Obrisati šablon „${template.name}“?`)) return;
+  try {
+    await api(`/api/v1/document-templates/${template.id}`, {method:"DELETE"});
+    await loadDocumentTemplates();
+    showToast("Šablon je obrisan.");
+  } catch (error) { showToast(error.message, true); }
+}
+
 function resetDocumentForm() {
-  const form = $("#document-form"); form.reset(); editingDocumentId = null; documentLineSequence = 0; $("#document-lines").innerHTML = ""; addDocumentLine();
+  const form = $("#document-form"); suspendDocumentAutosave = true; form.reset(); editingDocumentId = null; documentLineSequence = 0; $("#document-lines").innerHTML = ""; addDocumentLine();
   $("#document-dialog-eyebrow").textContent = "NOVI POSLOVNI DOKUMENT"; $("#document-dialog-title").textContent = "Unos bez XML-a"; $("#document-submit-button").textContent = "Generiši dokument";
   const today = new Date().toISOString().slice(0, 10); form.elements.issue_date.value = today; form.elements.delivery_date.value = today;
-  const due = new Date(); due.setDate(due.getDate() + 15); form.elements.due_date.value = due.toISOString().slice(0, 10); toggleDocumentType();
+  const due = new Date(); due.setDate(due.getDate() + 15); form.elements.due_date.value = due.toISOString().slice(0, 10); $("#document-template-select").value = ""; $("#document-autosave-status").textContent = "Automatski nacrt je uključen."; toggleDocumentType(); suspendDocumentAutosave = false;
 }
 
 function localDateTimeValue(value) {
@@ -830,6 +1014,7 @@ $("#document-form").addEventListener("submit", async event => {
   const path = editingDocumentId ? `/api/v1/documents/${editingDocumentId}/from-form` : "/api/v1/documents/from-form";
   try {
     await api(path, {method:editingDocumentId ? "PUT" : "POST", body:JSON.stringify(payload)});
+    clearAutomaticDocumentDraft(provider);
     $("#document-dialog").close();
     showToast(editingDocumentId ? "Izmene su sačuvane i XML je ponovo generisan." : (data.queue_after_create ? `Dokument je pripremljen i slanje u ${providerDestination(provider)} je pokrenuto.` : "Dokument i UBL XML su sačuvani."));
     editingDocumentId = null;
@@ -891,8 +1076,26 @@ $("#document-form [name=issue_date]").addEventListener("change", syncDespatchDat
 $("#document-form [name=planned_despatch_at]").addEventListener("input", syncDespatchDateConstraints);
 $("#document-form [name=actual_despatch_at]").addEventListener("input", syncDespatchDateConstraints);
 $("#document-form [name=planned_delivery_at]").addEventListener("input", syncDespatchDateConstraints);
+$("#document-form").addEventListener("input", scheduleAutomaticDocumentDraft);
+$("#document-form").addEventListener("change", scheduleAutomaticDocumentDraft);
+$("#document-template-select").addEventListener("change", updateDocumentTemplateActions);
+$("#apply-document-template").onclick = () => {
+  const template = selectedDocumentTemplate(); if (!template) return;
+  applyDocumentFormState(template.template_data, {fromTemplate:true});
+  $("#document-template-select").value = template.id; updateDocumentTemplateActions();
+  scheduleAutomaticDocumentDraft(); showToast(`Primenjen je šablon „${template.name}“.`);
+};
+$("#save-document-template").onclick = saveNewDocumentTemplate;
+$("#update-document-template").onclick = updateSelectedDocumentTemplate;
+$("#delete-document-template").onclick = deleteSelectedDocumentTemplate;
+$("#clear-document-draft").onclick = () => {
+  const provider = $("#document-form").elements.provider.value;
+  clearAutomaticDocumentDraft(provider); resetDocumentForm();
+  $("#document-form").elements.provider.value = provider; toggleDocumentType();
+  $("#document-autosave-status").textContent = "Unos je očišćen. Automatski nacrt je uključen.";
+};
 $("#document-customer-select").addEventListener("change", event => fillCustomer(state.customers.find(customer => customer.id === event.target.value)));
-$("#add-document-line").onclick = addDocumentLine;
+$("#add-document-line").onclick = () => { addDocumentLine(); scheduleAutomaticDocumentDraft(); };
 $("#new-customer-button").onclick = () => openCustomerDialog();
 $("#document-new-customer").onclick = () => openCustomerDialog();
 $("#new-item-button").onclick = () => openItemDialog();
@@ -901,9 +1104,12 @@ $("#new-document-button").onclick = () => {
   const validTaxId = /^\d{9}$/.test(state.organization?.tax_id || "");
   if (!validTaxId || requiredProfile.some(field => !state.organization?.profile?.[field])) { showView("settings"); showToast("Prvo unesite važeće pravne i poslovne podatke izabrane firme.", true); return; }
   $("#document-error").textContent = ""; resetDocumentForm();
-  $("#document-form").elements.provider.value = ["receipt", "despatch"].includes(state.documentScope) ? "eotpremnice" : "sef";
+  const provider = ["receipt", "despatch"].includes(state.documentScope) ? "eotpremnice" : "sef";
+  $("#document-form").elements.provider.value = provider;
   toggleDocumentType();
+  const restored = restoreAutomaticDocumentDraft(provider);
   $("#document-dialog").showModal();
+  if (restored) showToast("Vraćen je nezavršeni automatski nacrt.");
 };
 $("#new-organization-button").onclick = () => { $("#organization-error").textContent = ""; refreshRequiredMarkers($("#organization-form")); $("#organization-dialog").showModal(); };
 $("#invite-button").onclick = () => {
@@ -916,7 +1122,7 @@ $("#invite-button").onclick = () => {
 $("#refresh-button").onclick = async () => { await loadWorkspace(); showToast("Podaci su osveženi."); };
 $("#logout").onclick = async () => { try { await api("/api/v1/auth/logout", {method:"POST", tenant:false}); } finally { clearSession(); } };
 $("#menu-button").onclick = () => $(".sidebar").classList.toggle("open");
-$$('.close-dialog').forEach(button => button.onclick = () => button.closest("dialog").close());
+$$('.close-dialog').forEach(button => button.onclick = () => { if (button.closest("dialog")?.id === "document-dialog") saveAutomaticDocumentDraft(); button.closest("dialog").close(); });
 $$('.nav-item[data-view]').forEach(button => button.onclick = () => button.dataset.documentScope ? showDocumentScope(button.dataset.documentScope) : showView(button.dataset.view));
 [$("#document-search"), $("#status-filter")].forEach(control => control.addEventListener("input", renderDocuments));
 $("#customer-search").addEventListener("input", renderCustomers);

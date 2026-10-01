@@ -20,7 +20,7 @@ def test_frontend_uses_provider_specific_send_labels():
     assert 'return provider === "sef" ? "SEF" : "eOtpremnice"' in script
     assert "Pošalji u red" not in script
     assert "Pošalji u red" not in template
-    assert '/static/app.js?v=0.8.21' in template
+    assert '/static/app.js?v=0.8.22' in template
 
 
 def test_frontend_separates_invoice_and_logistics_workflows_in_sidebar():
@@ -69,7 +69,7 @@ def test_print_layout_has_professional_invoice_sections():
     assert 'Podaci za plaćanje' in script
     assert 'print-color-adjust: exact' in print_styles
     assert 'thead { display: table-header-group; }' in print_styles
-    assert '/static/print.css?v=0.8.21' in script
+    assert '/static/print.css?v=0.8.22' in script
     assert (
         ".party:first-child { border-right: 0; border-bottom: 0; border-left: 0; }"
         in print_styles
@@ -93,6 +93,24 @@ def test_carrier_fields_are_required_for_external_carrier_transport():
     assert '["carrier_name", "carrier_tax_id", "carrier_registration_number"]' in script
     assert 'addEventListener("change", toggleCarrierRequirements)' in script
     assert 'replace(/^Value error,\\s*/i, "")' in script
+
+
+def test_document_form_has_shared_templates_and_per_user_automatic_drafts():
+    script = (PROJECT_ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
+    template = (PROJECT_ROOT / "app" / "templates" / "index.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'id="document-template-select"' in template
+    assert 'id="save-document-template"' in template
+    assert 'id="clear-document-draft"' in template
+    assert 'api("/api/v1/document-templates")' in script
+    assert "edokumenti_form_draft:" in script
+    assert "created_by_user_id" not in script
+    assert 'templateExcluded = new Set(["document_number", "issue_date"' in script
+    assert "due_days" in script
+    assert "profile.street" in script
+    assert "profile.bank_account" in script
 
 
 def test_existing_despatch_editor_uses_current_serbian_issue_date():

@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
@@ -160,6 +161,30 @@ class CatalogItemOut(CatalogItemInput):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class DocumentTemplateInput(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    provider: Provider
+    document_type: Literal["sales_invoice", "despatch_advice"]
+    template_data: dict
+
+    @model_validator(mode="after")
+    def validate_template(self):
+        expected_type = "sales_invoice" if self.provider == Provider.sef else "despatch_advice"
+        if self.document_type != expected_type:
+            raise ValueError("Vrsta šablona ne odgovara izabranom servisu")
+        if len(json.dumps(self.template_data, ensure_ascii=False)) > 200_000:
+            raise ValueError("Šablon je prevelik")
+        return self
+
+
+class DocumentTemplateOut(DocumentTemplateInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    created_by_user_id: UUID | None
     created_at: datetime
     updated_at: datetime
 
