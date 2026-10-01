@@ -475,7 +475,7 @@ function printDocument(doc, preview, existingPopup = null) {
   const vatSummary = vatRows.length ? `<table class="vat-table"><thead><tr><th>PDV stopa</th><th class="right">Osnovica</th><th class="right">PDV iznos</th></tr></thead><tbody>${vatRows.map(group => `<tr><td>${escapeHtml(vatNames[`${group.rate}:${group.category}`] || `${group.rate}%`)}</td><td class="right">${formatAmount(group.base, currency)}</td><td class="right">${formatAmount(group.vat, currency)}</td></tr>`).join("")}</tbody></table>` : "";
   const paymentBlock = preview.paymentAccount || preview.paymentReference ? `<section class="section payment"><h2>Podaci za plaćanje</h2><div class="payment-grid">${preview.paymentAccount ? `<div><span>Račun za uplatu</span><strong>${escapeHtml(preview.paymentAccount)}</strong></div>` : ""}${preview.paymentReference ? `<div><span>Poziv na broj</span><strong>${escapeHtml(preview.paymentReference)}</strong></div>` : ""}</div></section>` : "";
   popup.document.open();
-  popup.document.write(`<!doctype html><html lang="sr-Latn"><head><meta charset="utf-8"><title>${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</title><link rel="stylesheet" href="${escapeHtml(location.origin)}/static/print.css?v=0.8.22"></head><body><div class="print-toolbar"><strong>Pregled štampe · ${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</strong><div class="print-actions"><button id="close-print" type="button">Zatvori</button><button class="primary" id="print-now" type="button">Štampaj dokument</button></div></div>
+  popup.document.write(`<!doctype html><html lang="sr-Latn"><head><meta charset="utf-8"><title>${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</title><link rel="stylesheet" href="${escapeHtml(location.origin)}/static/print.css?v=0.8.23"></head><body><div class="print-toolbar"><strong>Pregled štampe · ${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</strong><div class="print-actions"><button id="close-print" type="button">Zatvori</button><button class="primary" id="print-now" type="button">Štampaj dokument</button></div></div>
     <header class="document-header"><div class="brand"><p class="eyebrow">IZDAVALAC DOKUMENTA</p><strong>${escapeHtml(preview.issuer.name)}</strong><span class="muted">PIB: ${escapeHtml(preview.issuer.taxId || "—")}</span></div><div class="document-id"><h1>${escapeHtml(documentLabel)}</h1><span class="number">Broj: ${escapeHtml(preview.number)}</span><span class="status">${escapeHtml(documentStatusName(doc))}</span></div></header>
     <table class="meta-table"><tr><td><span>Datum izdavanja</span><strong>${formatDate(preview.issueDate)}</strong></td><td><span>${invoice ? "Datum dospeća" : "Datum isporuke"}</span><strong>${formatDate(preview.dueDate)}</strong></td><td><span>Valuta</span><strong>${escapeHtml(currency)}</strong></td><td><span>Servis</span><strong>${escapeHtml(doc.provider === "sef" ? "SEF" : "eOtpremnice")}</strong></td></tr></table>
     <section class="parties"><div class="party"><span>${partyLabel}</span><strong>${escapeHtml(preview.issuer.name)}</strong><small>PIB: ${escapeHtml(preview.issuer.taxId || "—")}</small><small>${escapeHtml(preview.issuer.address || "Adresa nije navedena")}</small></div><div class="party"><span>${recipientLabel}</span><strong>${escapeHtml(preview.recipient.name)}</strong><small>PIB: ${escapeHtml(preview.recipient.taxId || "—")}</small><small>${escapeHtml(preview.recipient.address || "Adresa nije navedena")}</small></div></section>
@@ -672,7 +672,15 @@ $("#mfa-confirm-form").addEventListener("submit", async event => {
 });
 
 $("#organization-select").addEventListener("change", async event => {
+  clearTimeout(documentDraftTimer); documentDraftTimer = null;
+  const documentDialog = $("#document-dialog");
+  if (documentDialog.open) { saveAutomaticDocumentDraft(); documentDialog.close(); }
   state.organization = state.organizations.find(item => item.id === event.target.value); sessionStorage.setItem(organizationKey, state.organization.id);
+  state.documents = []; state.documentTemplates = []; state.customers = []; state.items = [];
+  state.documentAttentionCounts = {inbound:0,outbound:0,receipt:0,despatch:0};
+  $("#document-customer-select").innerHTML = '<option value="">Ručni unos / novi kupac</option>';
+  renderDocuments(); renderCustomers(); renderCatalogItems();
+  resetDocumentForm();
   $("#new-document-button").hidden = !canEdit(); $("#new-customer-button").hidden = !canEdit(); $("#new-item-button").hidden = !canEdit(); $("#invite-button").hidden = !canAdminister(); await loadWorkspace();
 });
 
@@ -728,6 +736,7 @@ function addDocumentLine(line = null) {
 function toggleDocumentType() {
   const form = $("#document-form"); const provider = form.elements.provider.value; const invoice = provider === "sef";
   const issueDate = form.elements.issue_date; const profile = state.organization?.profile || {};
+  $("#provider-field").hidden = !invoice;
   issueDate.readOnly = !invoice;
   issueDate.min = invoice ? "" : serbianCalendarDate(); issueDate.max = invoice ? "" : serbianCalendarDate();
   if (!invoice) issueDate.value = serbianCalendarDate();
@@ -814,7 +823,8 @@ function captureDocumentFormState({forTemplate = false} = {}) {
     [...row.querySelectorAll("[name]")].map(control => [control.name, control.value])
   ));
   return {
-    version: 1,
+    version: 2,
+    organization_id: state.organization?.id || null,
     provider: form.elements.provider.value,
     values,
     lines,
@@ -832,6 +842,7 @@ function addDays(dateValue, days) {
 
 function applyDocumentFormState(snapshot, {fromTemplate = false} = {}) {
   if (!snapshot?.values) return false;
+  if (!fromTemplate && snapshot.organization_id !== state.organization?.id) return false;
   const form = $("#document-form"); suspendDocumentAutosave = true;
   try {
     form.elements.provider.value = snapshot.provider || form.elements.provider.value;
@@ -880,7 +891,12 @@ function scheduleAutomaticDocumentDraft() {
 function restoreAutomaticDocumentDraft(provider) {
   try {
     const snapshot = JSON.parse(localStorage.getItem(documentDraftKey(provider)) || "null");
-    if (!snapshot || !applyDocumentFormState(snapshot)) return false;
+    if (!snapshot) return false;
+    if (snapshot.organization_id !== state.organization?.id) {
+      localStorage.removeItem(documentDraftKey(provider));
+      return false;
+    }
+    if (!applyDocumentFormState(snapshot)) return false;
     $("#document-autosave-status").textContent = "Vraćen je poslednji automatski nacrt.";
     return true;
   } catch {

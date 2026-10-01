@@ -6,8 +6,8 @@
   <meta name="color-scheme" content="light">
   <title>eDokumenti</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/app.css?v=0.8.22">
-  <link rel="stylesheet" href="/static/security.css?v=0.8.22">
+  <link rel="stylesheet" href="/static/app.css?v=0.8.23">
+  <link rel="stylesheet" href="/static/security.css?v=0.8.23">
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -118,7 +118,7 @@
         <small class="template-status" id="document-autosave-status">Automatski nacrt je uključen.</small>
       </div>
       <div class="form-grid">
-        <label>Servis<select name="provider" required><option value="sef">SEF eFakture</option><option value="eotpremnice">eOtpremnice</option></select></label>
+        <label id="provider-field">Servis<select name="provider" required><option value="sef">SEF eFakture</option><option value="eotpremnice">eOtpremnice</option></select></label>
         <label>Broj dokumenta<input name="document_number" required minlength="3" maxlength="100" title="Broj dokumenta mora imati najmanje 3 znaka"></label>
         <label>Datum izdavanja<input name="issue_date" type="date" required></label>
       </div>
@@ -205,6 +205,6 @@
       <div class="dialog-actions"><button class="primary" type="submit">Promeni lozinku</button></div>
     </form>
   </dialog>
-  <script src="/static/app.js?v=0.8.22" defer></script>
+  <script src="/static/app.js?v=0.8.23" defer></script>
 </body>
 </html>
