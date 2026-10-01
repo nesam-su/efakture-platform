@@ -6,8 +6,8 @@
   <meta name="color-scheme" content="light">
   <title>eDokumenti</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/app.css?v=0.8.20">
-  <link rel="stylesheet" href="/static/security.css?v=0.8.20">
+  <link rel="stylesheet" href="/static/app.css?v=0.8.21">
+  <link rel="stylesheet" href="/static/security.css?v=0.8.21">
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -42,9 +42,10 @@
     <aside class="sidebar">
       <div class="brand"><span class="brand-mark">eD</span><strong>eDokumenti</strong></div>
       <nav aria-label="Glavna navigacija">
-        <button class="nav-item active" data-view="documents" data-document-scope="inbound"><span>↓</span><span class="nav-label">Ulazne fakture</span><strong class="nav-count" id="inbound-document-count">0</strong></button>
-        <button class="nav-item" data-view="documents" data-document-scope="outbound"><span>↑</span><span class="nav-label">Izlazne fakture</span><strong class="nav-count" id="outbound-document-count">0</strong></button>
-        <button class="nav-item" data-view="documents" data-document-scope="despatch"><span>⇄</span><span class="nav-label">Otpremnice</span><strong class="nav-count" id="despatch-document-count">0</strong></button>
+        <button class="nav-item active" data-view="documents" data-document-scope="inbound"><span>↓</span><span class="nav-label">Ulazne fakture</span><strong class="nav-count" id="inbound-document-count" title="Otvoreni dokumenti">0</strong></button>
+        <button class="nav-item" data-view="documents" data-document-scope="outbound"><span>↑</span><span class="nav-label">Izlazne fakture</span><strong class="nav-count" id="outbound-document-count" title="Otvoreni dokumenti">0</strong></button>
+        <button class="nav-item" data-view="documents" data-document-scope="receipt"><span>↓</span><span class="nav-label">Prijemnice</span><strong class="nav-count" id="receipt-document-count" title="Otvoreni dokumenti">0</strong></button>
+        <button class="nav-item" data-view="documents" data-document-scope="despatch"><span>↑</span><span class="nav-label">Otpremnice</span><strong class="nav-count" id="despatch-document-count" title="Otvoreni dokumenti">0</strong></button>
         <button class="nav-item" data-view="customers"><span>♧</span>Kupci</button>
         <button class="nav-item" data-view="catalog"><span>▤</span>Artikli</button>
         <button class="nav-item" data-view="jobs"><span>↻</span>Poslovi</button>
@@ -70,14 +71,14 @@
           <div class="page-heading"><div><p class="eyebrow">POSLOVNI DOKUMENTI</p><h1 id="documents-heading">Pregled dokumenata</h1><p class="muted" id="documents-description">SEF fakture i eOtpremnice iz svih aktivnih tokova.</p></div></div>
           <div class="metric-grid">
             <article class="metric"><span>Ukupno</span><strong id="metric-total">0</strong><small>učitanih dokumenata</small></article>
-            <article class="metric"><span>U obradi</span><strong id="metric-active">0</strong><small>na čekanju ili poslato</small></article>
-            <article class="metric"><span>Uspešno</span><strong id="metric-success">0</strong><small>isporučeno ili prihvaćeno</small></article>
+            <article class="metric"><span>Otvoreno</span><strong id="metric-active">0</strong><small>traži rad ili je u postupku</small></article>
+            <article class="metric"><span>Završeno</span><strong id="metric-success">0</strong><small>prihvaćeno ili usaglašeno</small></article>
             <article class="metric danger"><span>Pažnja</span><strong id="metric-errors">0</strong><small>odbijeno ili greška</small></article>
           </div>
           <div class="panel table-panel">
             <div class="toolbar">
               <div class="search"><span>⌕</span><input id="document-search" placeholder="Pretraži broj, kupca ili PIB"></div>
-              <select id="status-filter" aria-label="Status"><option value="">Svi statusi</option><option value="draft">Nacrt</option><option value="queued">Na čekanju</option><option value="sent">Poslato</option><option value="delivered">Isporučeno</option><option value="accepted">Prihvaćeno</option><option value="rejected">Odbijeno</option><option value="error">Greška</option></select>
+              <select id="status-filter" aria-label="Status"><option value="">Svi statusi</option><option value="workflow:open">Otvoreni / u postupku</option><option value="workflow:completed">Završeni</option><option value="workflow:attention">Greška ili odbijeno</option><option value="draft">Nacrt</option><option value="queued">Na čekanju</option><option value="new">Novo</option><option value="sending">Slanje</option><option value="sent">Poslato</option><option value="seen">Pregledano</option><option value="received">Primljeno</option><option value="delivered">Fizički prijem</option><option value="approved">Odobreno</option><option value="accepted">Prihvaćeno</option><option value="fulfilled">Usaglašeno</option><option value="paid">Plaćeno</option><option value="overdue">Dospelo</option><option value="rejected">Odbijeno</option><option value="cancelled">Otkazano</option><option value="storno">Stornirano</option><option value="seized">Zaplenjeno</option><option value="mistake">Greška servisa</option><option value="error">Lokalna greška</option></select>
             </div>
             <div class="table-wrap">
               <table><thead><tr><th>Dokument</th><th>Partner</th><th>Datum</th><th>Iznos</th><th>Status</th><th></th></tr></thead><tbody id="document-rows"></tbody></table>
@@ -195,6 +196,6 @@
       <div class="dialog-actions"><button class="primary" type="submit">Promeni lozinku</button></div>
     </form>
   </dialog>
-  <script src="/static/app.js?v=0.8.20" defer></script>
+  <script src="/static/app.js?v=0.8.21" defer></script>
 </body>
 </html>

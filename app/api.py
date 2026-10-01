@@ -16,7 +16,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse
-from sqlalchemy import delete, func, select, text, tuple_
+from sqlalchemy import and_, delete, func, or_, select, text, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1418,6 +1418,102 @@ async def list_documents(
         )
     query = query.order_by(BusinessDocument.created_at.desc(), BusinessDocument.id.desc())
     return list((await db.scalars(query.limit(limit))).all())
+
+
+@router.get("/documents/attention-counts", response_model=dict[str, int])
+async def document_attention_counts(
+    context: TenantContext = Depends(tenant_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Count open workflows without being limited by the paged document list."""
+    terminal_remote_statuses = (
+        "approved",
+        "accepted",
+        "fulfilled",
+        "paid",
+        "rejected",
+        "cancelled",
+        "canceled",
+        "storno",
+        "deleted",
+        "archived",
+        "seized",
+    )
+    remote_status = func.lower(func.coalesce(BusinessDocument.remote_status, ""))
+    needs_attention = and_(
+        BusinessDocument.status.notin_(
+            [DocumentStatus.accepted, DocumentStatus.rejected, DocumentStatus.cancelled]
+        ),
+        or_(
+            BusinessDocument.remote_status.is_(None),
+            remote_status.notin_(terminal_remote_statuses),
+        ),
+    )
+    organization = BusinessDocument.organization_id == context.organization_id
+    result = (
+        await db.execute(
+            select(
+                func.count()
+                .filter(
+                    organization,
+                    needs_attention,
+                    BusinessDocument.provider == Provider.sef,
+                    BusinessDocument.direction == Direction.inbound,
+                    BusinessDocument.document_type == "purchase_invoice",
+                )
+                .label("inbound"),
+                func.count()
+                .filter(
+                    organization,
+                    needs_attention,
+                    BusinessDocument.provider == Provider.sef,
+                    BusinessDocument.direction == Direction.outbound,
+                    BusinessDocument.document_type == "sales_invoice",
+                )
+                .label("outbound"),
+                func.count()
+                .filter(
+                    organization,
+                    needs_attention,
+                    BusinessDocument.provider == Provider.eotpremnice,
+                    or_(
+                        and_(
+                            BusinessDocument.document_type == "despatch_advice",
+                            BusinessDocument.direction == Direction.outbound,
+                        ),
+                        and_(
+                            BusinessDocument.document_type == "receipt_advice",
+                            BusinessDocument.direction == Direction.inbound,
+                        ),
+                    ),
+                )
+                .label("despatch"),
+                func.count()
+                .filter(
+                    organization,
+                    needs_attention,
+                    BusinessDocument.provider == Provider.eotpremnice,
+                    or_(
+                        and_(
+                            BusinessDocument.document_type == "despatch_advice",
+                            BusinessDocument.direction == Direction.inbound,
+                        ),
+                        and_(
+                            BusinessDocument.document_type == "receipt_advice",
+                            BusinessDocument.direction == Direction.outbound,
+                        ),
+                    ),
+                )
+                .label("receipt"),
+            )
+        )
+    ).one()
+    return {
+        "inbound": int(result.inbound or 0),
+        "outbound": int(result.outbound or 0),
+        "despatch": int(result.despatch or 0),
+        "receipt": int(result.receipt or 0),
+    }
 
 
 @router.get("/documents/{document_id}", response_model=DocumentOut)

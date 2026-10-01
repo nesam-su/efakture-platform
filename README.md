@@ -171,4 +171,4 @@ Reset lozinke uvek vraća isti javni odgovor bez obzira da li email postoji. Lin
 
 TOTP se uključuje u delu „Korisnici“. Tajna se čuva Fernet-šifrovano, prihvata se samo mali vremenski prozor, a isti vremenski kod se ne može upotrebiti dva puta. Rezervni kodovi se prikazuju samo jednom i svaki se pojedinačno poništava nakon upotrebe.
 
-Detaljnije odluke su u [`docs/ARHITEKTURA.md`](docs/ARHITEKTURA.md), zahtevi u [`docs/MATRICA-ZAHTEVA.md`](docs/MATRICA-ZAHTEVA.md), a tehnički nalazi u [`docs/ZAHTEVI-IZ-DOKUMENTACIJE.md`](docs/ZAHTEVI-IZ-DOKUMENTACIJE.md).
+Detaljnije odluke su u [`docs/ARHITEKTURA.md`](docs/ARHITEKTURA.md), zahtevi u [`docs/MATRICA-ZAHTEVA.md`](docs/MATRICA-ZAHTEVA.md), tehnički nalazi u [`docs/ZAHTEVI-IZ-DOKUMENTACIJE.md`](docs/ZAHTEVI-IZ-DOKUMENTACIJE.md), a pravila radnih tokova u [`docs/STATUSI-DOKUMENATA.md`](docs/STATUSI-DOKUMENATA.md).

@@ -2,7 +2,7 @@ const tokenKey = "edokumenti_access_token";
 const organizationKey = "edokumenti_organization_id";
 const documentScopeKey = "edokumenti_document_scope";
 const savedDocumentScope = sessionStorage.getItem(documentScopeKey);
-const state = {organizations: [], organization: null, documents: [], customers: [], items: [], jobs: [], events: [], members: [], sessions: [], integrations: [], documentScope: ["inbound", "outbound", "despatch"].includes(savedDocumentScope) ? savedDocumentScope : "inbound"};
+const state = {organizations: [], organization: null, documents: [], documentAttentionCounts: {inbound:0,outbound:0,receipt:0,despatch:0}, customers: [], items: [], jobs: [], events: [], members: [], sessions: [], integrations: [], documentScope: ["inbound", "outbound", "receipt", "despatch"].includes(savedDocumentScope) ? savedDocumentScope : "inbound"};
 const autoRefreshIntervalMs = 5000;
 let autoRefreshBusy = false;
 
@@ -46,7 +46,7 @@ function formatAmount(value, currency = "RSD") {
 }
 
 const statusNames = {draft:"Nacrt",queued:"Na čekanju",sent:"Poslato",delivered:"Isporučeno",accepted:"Prihvaćeno",rejected:"Odbijeno",cancelled:"Stornirano",error:"Greška",running:"U toku",retrying:"Ponovni pokušaj",succeeded:"Uspešno",failed:"Neuspešno"};
-const remoteStatusNames = {new:"Novo",seen:"Pregledano",renotified:"Ponovo obavešteno",approved:"Odobreno",accepted:"Prihvaćeno",rejected:"Odbijeno",cancelled:"Otkazano",canceled:"Otkazano",storno:"Stornirano",sent:"Poslato",received:"Primljeno",paid:"Plaćeno",mistake:"Greška",overdue:"Dospelo",archived:"Arhivirano",sending:"Slanje",sendinginprogress:"Slanje u toku",deleted:"Obrisano",unknown:"Nepoznato",fulfilled:"Realizovano",delivered:"Isporučeno",deliveryconfirmed:"Isporuka potvrđena",transportationstarted:"Prevoz započet"};
+const remoteStatusNames = {new:"Novo",draft:"Nacrt",seen:"Pregledano",renotified:"Ponovo obavešteno",approved:"Odobreno",accepted:"Prihvaćeno",rejected:"Odbijeno",cancelled:"Otkazano",canceled:"Otkazano",storno:"Stornirano",sent:"Poslato",received:"Primljeno",paid:"Plaćeno",mistake:"Greška",overdue:"Dospelo",archived:"Arhivirano",sending:"Slanje",sendinginprogress:"Slanje u toku",deleted:"Obrisano",unknown:"Nepoznato",fulfilled:"Usaglašeno",delivered:"Fizički prijem",seized:"Zaplenjeno",deliveryconfirmed:"Fizički prijem potvrđen",transportationstarted:"Prevoz započet"};
 const roleNames = {owner:"Vlasnik",admin:"Administrator",accountant:"Knjigovođa",operator:"Operater",viewer:"Pregled"};
 const documentTypeNames = {sales_invoice:"Izlazna faktura",purchase_invoice:"Ulazna faktura",despatch_advice:"Otpremnica",receipt_advice:"Prijemnica"};
 const unitNames = {H87:"Komad",KGM:"Kilogram",LTR:"Litar",MTR:"Metar",MTK:"m²",MTQ:"m³",HUR:"Sat",DAY:"Dan",XPK:"Paket"};
@@ -65,10 +65,48 @@ function remoteStatusName(value) {
   return remoteStatusNames[String(value).replace(/[^a-z]/gi, "").toLowerCase()] || value;
 }
 
+const terminalRemoteStatuses = new Set(["approved", "accepted", "fulfilled", "paid", "rejected", "cancelled", "canceled", "storno", "deleted", "archived", "seized"]);
+
+function normalizedRemoteStatus(doc) {
+  return String(doc.remote_status || "").replace(/[^a-z]/gi, "").toLowerCase();
+}
+
+function documentNeedsAttention(doc) {
+  const remote = normalizedRemoteStatus(doc);
+  if (["accepted", "rejected", "cancelled"].includes(doc.status)) return false;
+  return !remote || !terminalRemoteStatuses.has(remote);
+}
+
+function documentCompletedSuccessfully(doc) {
+  const remote = normalizedRemoteStatus(doc);
+  return ["approved", "accepted", "fulfilled", "paid"].includes(remote) || (!remote && doc.status === "accepted");
+}
+
+function documentNeedsCorrection(doc) {
+  const remote = normalizedRemoteStatus(doc);
+  return doc.status === "error" || doc.status === "rejected" || ["mistake", "rejected"].includes(remote);
+}
+
+function documentMatchesStatusFilter(doc, filter) {
+  if (!filter) return true;
+  if (filter === "workflow:open") return documentNeedsAttention(doc);
+  if (filter === "workflow:completed") return !documentNeedsAttention(doc);
+  if (filter === "workflow:attention") return documentNeedsCorrection(doc);
+  const remote = normalizedRemoteStatus(doc);
+  return remote ? remote === filter : doc.status === filter;
+}
+
 function documentStatusName(doc) {
+  if (doc.remote_status) return remoteStatusName(doc.remote_status);
   if (doc.document_type === "purchase_invoice" && doc.status === "sent") return "Primljena";
   if (doc.document_type === "sales_invoice" && doc.status === "sent") return "Poslata";
   return statusNames[doc.status] || doc.status;
+}
+
+function documentWorkflowStateName(doc) {
+  if (doc.status === "error") return "Potrebna pažnja";
+  if (documentNeedsAttention(doc)) return "U postupku";
+  return "Završeno";
 }
 
 function showToast(message, error = false) {
@@ -177,7 +215,12 @@ function renderOrganizationProfile() {
 }
 
 async function loadDocuments() {
-  state.documents = await api("/api/v1/documents?limit=200");
+  const [documents, counts] = await Promise.all([
+    api("/api/v1/documents?limit=200"),
+    api("/api/v1/documents/attention-counts"),
+  ]);
+  state.documents = documents;
+  state.documentAttentionCounts = counts;
   renderDocuments();
 }
 
@@ -187,16 +230,18 @@ function renderDocuments() {
   const scoped = state.documents.filter(doc => {
     if (state.documentScope === "inbound") return doc.provider === "sef" && doc.direction === "inbound" && doc.document_type === "purchase_invoice";
     if (state.documentScope === "outbound") return doc.provider === "sef" && doc.direction === "outbound" && doc.document_type === "sales_invoice";
-    return doc.provider === "eotpremnice";
+    if (state.documentScope === "receipt") return doc.provider === "eotpremnice" && ((doc.document_type === "despatch_advice" && doc.direction === "inbound") || (doc.document_type === "receipt_advice" && doc.direction === "outbound"));
+    return doc.provider === "eotpremnice" && ((doc.document_type === "despatch_advice" && doc.direction === "outbound") || (doc.document_type === "receipt_advice" && doc.direction === "inbound"));
   });
   const filtered = scoped.filter(doc => {
     const text = `${doc.document_number || ""} ${doc.counterparty_name || ""} ${doc.counterparty_tax_id || ""}`.toLowerCase();
-    return (!search || text.includes(search)) && (!status || doc.status === status);
+    return (!search || text.includes(search)) && documentMatchesStatusFilter(doc, status);
   });
   const headings = {
     inbound: ["Primljene fakture", "Fakture dobavljača automatski preuzete sa SEF-a."],
     outbound: ["Poslate fakture", "Fakture kupcima kreirane i poslate kroz SEF."],
-    despatch: ["Otpremnice", "Ulazne i izlazne eOtpremnice u jednom pregledu."],
+    receipt: ["Prijemnice", "Ulazni tok robe: primljene eOtpremnice i prijemnice koje šaljete kao odgovor."],
+    despatch: ["Otpremnice", "Izlazni tok robe: poslate eOtpremnice i prijemnice koje primate od kupca."],
   };
   $("#documents-heading").textContent = headings[state.documentScope][0];
   $("#documents-description").textContent = headings[state.documentScope][1];
@@ -204,16 +249,17 @@ function renderDocuments() {
     <td><strong>${escapeHtml(doc.document_number || documentTypeNames[doc.document_type] || doc.document_type)}</strong><small>${escapeHtml(documentTypeNames[doc.document_type] || doc.document_type)} · ${doc.document_type === "purchase_invoice" ? "primljena" : doc.document_type === "sales_invoice" ? "poslata" : doc.direction === "outbound" ? "izlazna" : "ulazna"}</small></td>
     <td><strong>${escapeHtml(doc.counterparty_name || "—")}</strong><small>${escapeHtml(doc.counterparty_tax_id || "")}</small></td>
     <td>${formatDate(doc.issue_date || doc.created_at)}</td><td>${formatAmount(doc.total_amount, doc.currency)}</td>
-    <td><span class="status ${doc.status}">${escapeHtml(documentStatusName(doc))}</span><small>${escapeHtml(remoteStatusName(doc.remote_status))}</small></td>
+    <td><span class="status ${doc.status}">${escapeHtml(documentStatusName(doc))}</span><small>${escapeHtml(documentWorkflowStateName(doc))}</small></td>
     <td><div class="row-actions"><button class="row-action" data-document-id="${doc.id}">Otvori</button><button class="row-action print-action" data-print-document-id="${doc.id}">Štampaj</button></div></td></tr>`).join("");
   $("#documents-empty").hidden = filtered.length > 0;
   $("#metric-total").textContent = scoped.length;
-  $("#metric-active").textContent = scoped.filter(doc => ["queued", "sent"].includes(doc.status)).length;
-  $("#metric-success").textContent = scoped.filter(doc => ["delivered", "accepted"].includes(doc.status)).length;
-  $("#metric-errors").textContent = scoped.filter(doc => ["rejected", "error"].includes(doc.status)).length;
-  $("#inbound-document-count").textContent = state.documents.filter(doc => doc.provider === "sef" && doc.direction === "inbound" && doc.document_type === "purchase_invoice").length;
-  $("#outbound-document-count").textContent = state.documents.filter(doc => doc.provider === "sef" && doc.direction === "outbound" && doc.document_type === "sales_invoice").length;
-  $("#despatch-document-count").textContent = state.documents.filter(doc => doc.provider === "eotpremnice").length;
+  $("#metric-active").textContent = scoped.filter(documentNeedsAttention).length;
+  $("#metric-success").textContent = scoped.filter(documentCompletedSuccessfully).length;
+  $("#metric-errors").textContent = scoped.filter(documentNeedsCorrection).length;
+  $("#inbound-document-count").textContent = state.documentAttentionCounts.inbound || 0;
+  $("#outbound-document-count").textContent = state.documentAttentionCounts.outbound || 0;
+  $("#receipt-document-count").textContent = state.documentAttentionCounts.receipt || 0;
+  $("#despatch-document-count").textContent = state.documentAttentionCounts.despatch || 0;
   $$("[data-document-scope]").forEach(item => item.classList.toggle("scope-active", item.dataset.documentScope === state.documentScope));
   $$("[data-document-id]").forEach(button => button.addEventListener("click", () => showDocument(button.dataset.documentId)));
   $$("[data-print-document-id]").forEach(button => button.addEventListener("click", () => showPrintPreview(button.dataset.printDocumentId)));
@@ -379,7 +425,7 @@ function documentPreviewMarkup(preview) {
 function printDocument(doc, preview, existingPopup = null) {
   const popup = existingPopup || window.open("", "_blank", "width=1000,height=760");
   if (!popup) { showToast("Pregledač je blokirao prozor za štampu.", true); return; }
-  const invoice = doc.document_type !== "despatch_advice";
+  const invoice = doc.provider === "sef";
   const currency = preview.currency || "RSD";
   const numericLines = preview.lines.map(line => ({...line, net:Number(line.netAmount), rate:Number(line.vatRate)}));
   const subtotal = numericLines.reduce((sum, line) => sum + (Number.isFinite(line.net) ? line.net : 0), 0);
@@ -395,9 +441,9 @@ function printDocument(doc, preview, existingPopup = null) {
   }, {});
   const vatRows = Object.values(vatGroups).sort((left, right) => left.rate - right.rate);
   const vatTotal = vatRows.reduce((sum, group) => sum + group.vat, 0);
-  const documentLabel = doc.document_type === "despatch_advice" ? "OTPREMNICA" : doc.direction === "inbound" ? "ULAZNA FAKTURA" : "FAKTURA";
-  const partyLabel = doc.document_type === "despatch_advice" ? "Pošiljalac" : "Izdavalac";
-  const recipientLabel = doc.document_type === "despatch_advice" ? "Primalac robe" : "Kupac / primalac";
+  const documentLabel = doc.document_type === "despatch_advice" ? "OTPREMNICA" : doc.document_type === "receipt_advice" ? "PRIJEMNICA" : doc.direction === "inbound" ? "ULAZNA FAKTURA" : "FAKTURA";
+  const partyLabel = invoice ? "Izdavalac" : "Pošiljalac";
+  const recipientLabel = invoice ? "Kupac / primalac" : "Primalac robe";
   const itemHeader = invoice
     ? '<th class="num">R.br.</th><th>Artikal / usluga</th><th class="right">Količina</th><th class="right">Jed. cena</th><th class="right">PDV</th><th class="right">Osnovica</th>'
     : '<th class="num">R.br.</th><th>Artikal / opis robe</th><th class="right">Količina</th><th>Jedinica mere</th>';
@@ -405,14 +451,14 @@ function printDocument(doc, preview, existingPopup = null) {
   const vatSummary = vatRows.length ? `<table class="vat-table"><thead><tr><th>PDV stopa</th><th class="right">Osnovica</th><th class="right">PDV iznos</th></tr></thead><tbody>${vatRows.map(group => `<tr><td>${escapeHtml(vatNames[`${group.rate}:${group.category}`] || `${group.rate}%`)}</td><td class="right">${formatAmount(group.base, currency)}</td><td class="right">${formatAmount(group.vat, currency)}</td></tr>`).join("")}</tbody></table>` : "";
   const paymentBlock = preview.paymentAccount || preview.paymentReference ? `<section class="section payment"><h2>Podaci za plaćanje</h2><div class="payment-grid">${preview.paymentAccount ? `<div><span>Račun za uplatu</span><strong>${escapeHtml(preview.paymentAccount)}</strong></div>` : ""}${preview.paymentReference ? `<div><span>Poziv na broj</span><strong>${escapeHtml(preview.paymentReference)}</strong></div>` : ""}</div></section>` : "";
   popup.document.open();
-  popup.document.write(`<!doctype html><html lang="sr-Latn"><head><meta charset="utf-8"><title>${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</title><link rel="stylesheet" href="${escapeHtml(location.origin)}/static/print.css?v=0.8.20"></head><body><div class="print-toolbar"><strong>Pregled štampe · ${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</strong><div class="print-actions"><button id="close-print" type="button">Zatvori</button><button class="primary" id="print-now" type="button">Štampaj dokument</button></div></div>
+  popup.document.write(`<!doctype html><html lang="sr-Latn"><head><meta charset="utf-8"><title>${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</title><link rel="stylesheet" href="${escapeHtml(location.origin)}/static/print.css?v=0.8.21"></head><body><div class="print-toolbar"><strong>Pregled štampe · ${escapeHtml(documentLabel)} ${escapeHtml(preview.number)}</strong><div class="print-actions"><button id="close-print" type="button">Zatvori</button><button class="primary" id="print-now" type="button">Štampaj dokument</button></div></div>
     <header class="document-header"><div class="brand"><p class="eyebrow">IZDAVALAC DOKUMENTA</p><strong>${escapeHtml(preview.issuer.name)}</strong><span class="muted">PIB: ${escapeHtml(preview.issuer.taxId || "—")}</span></div><div class="document-id"><h1>${escapeHtml(documentLabel)}</h1><span class="number">Broj: ${escapeHtml(preview.number)}</span><span class="status">${escapeHtml(documentStatusName(doc))}</span></div></header>
     <table class="meta-table"><tr><td><span>Datum izdavanja</span><strong>${formatDate(preview.issueDate)}</strong></td><td><span>${invoice ? "Datum dospeća" : "Datum isporuke"}</span><strong>${formatDate(preview.dueDate)}</strong></td><td><span>Valuta</span><strong>${escapeHtml(currency)}</strong></td><td><span>Servis</span><strong>${escapeHtml(doc.provider === "sef" ? "SEF" : "eOtpremnice")}</strong></td></tr></table>
     <section class="parties"><div class="party"><span>${partyLabel}</span><strong>${escapeHtml(preview.issuer.name)}</strong><small>PIB: ${escapeHtml(preview.issuer.taxId || "—")}</small><small>${escapeHtml(preview.issuer.address || "Adresa nije navedena")}</small></div><div class="party"><span>${recipientLabel}</span><strong>${escapeHtml(preview.recipient.name)}</strong><small>PIB: ${escapeHtml(preview.recipient.taxId || "—")}</small><small>${escapeHtml(preview.recipient.address || "Adresa nije navedena")}</small></div></section>
     <section class="section"><h2>Stavke dokumenta</h2>${preview.lines.length ? `<table class="items"><thead><tr>${itemHeader}</tr></thead><tbody>${itemRows}</tbody></table>` : '<p class="muted">Nema stavki dostupnih za prikaz.</p>'}</section>
     ${invoice ? `<section class="calculation"><div><h2>Pregled PDV-a</h2>${vatSummary || '<p class="muted">PDV obračun nije dostupan.</p>'}</div><div class="totals"><div class="totals-row"><span>Osnovica</span><span>${formatAmount(subtotal, currency)}</span></div><div class="totals-row"><span>PDV</span><span>${formatAmount(vatTotal, currency)}</span></div><div class="totals-row"><span>UKUPNO ZA PLAĆANJE</span><span>${formatAmount(preview.total, currency)}</span></div></div></section>${paymentBlock}` : ""}
     ${preview.note ? `<section class="section note"><h2>Napomena</h2><p>${escapeHtml(preview.note)}</p></section>` : ""}
-    <footer class="footer"><span>Dokument pripremljen u aplikaciji eDokumenti · šablon 0.8.20</span><span>${escapeHtml(documentLabel)} · ${escapeHtml(preview.number)}</span></footer>
+    <footer class="footer"><span>Dokument pripremljen u aplikaciji eDokumenti · šablon 0.8.21</span><span>${escapeHtml(documentLabel)} · ${escapeHtml(preview.number)}</span></footer>
   </body></html>`);
   popup.document.close();
   popup.document.querySelector("#print-now").onclick = () => popup.print();
@@ -855,7 +901,7 @@ $("#new-document-button").onclick = () => {
   const validTaxId = /^\d{9}$/.test(state.organization?.tax_id || "");
   if (!validTaxId || requiredProfile.some(field => !state.organization?.profile?.[field])) { showView("settings"); showToast("Prvo unesite važeće pravne i poslovne podatke izabrane firme.", true); return; }
   $("#document-error").textContent = ""; resetDocumentForm();
-  $("#document-form").elements.provider.value = state.documentScope === "despatch" ? "eotpremnice" : "sef";
+  $("#document-form").elements.provider.value = ["receipt", "despatch"].includes(state.documentScope) ? "eotpremnice" : "sef";
   toggleDocumentType();
   $("#document-dialog").showModal();
 };

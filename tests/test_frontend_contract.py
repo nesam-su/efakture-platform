@@ -20,10 +20,10 @@ def test_frontend_uses_provider_specific_send_labels():
     assert 'return provider === "sef" ? "SEF" : "eOtpremnice"' in script
     assert "Pošalji u red" not in script
     assert "Pošalji u red" not in template
-    assert '/static/app.js?v=0.8.20' in template
+    assert '/static/app.js?v=0.8.21' in template
 
 
-def test_frontend_separates_inbound_and_outbound_invoices_in_sidebar():
+def test_frontend_separates_invoice_and_logistics_workflows_in_sidebar():
     script = (PROJECT_ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
     template = (PROJECT_ROOT / "app" / "templates" / "index.html").read_text(
         encoding="utf-8"
@@ -31,13 +31,21 @@ def test_frontend_separates_inbound_and_outbound_invoices_in_sidebar():
 
     assert 'data-document-scope="inbound"' in template
     assert 'data-document-scope="outbound"' in template
+    assert 'data-document-scope="receipt"' in template
     assert 'data-document-scope="despatch"' in template
     assert "Ulazne fakture" in template
     assert "Izlazne fakture" in template
     assert "Otpremnice" in template
+    assert "Prijemnice" in template
     assert '>Dokumenti</button>' not in template
     assert 'doc.document_type === "purchase_invoice"' in script
     assert 'doc.document_type === "sales_invoice"' in script
+    assert 'doc.document_type === "receipt_advice"' in script
+    assert 'doc.document_type === "despatch_advice"' in script
+    assert 'api("/api/v1/documents/attention-counts")' in script
+    assert 'terminalRemoteStatuses = new Set(' in script
+    assert 'fulfilled:"Usaglašeno"' in script
+    assert 'delivered:"Fizički prijem"' in script
     assert 'showDocumentScope(button.dataset.documentScope)' in script
     assert 'data-print-document-id="${doc.id}">Štampaj</button>' in script
     assert "XML je namenjen razmeni sa državnim servisom" in script
@@ -61,7 +69,7 @@ def test_print_layout_has_professional_invoice_sections():
     assert 'Podaci za plaćanje' in script
     assert 'print-color-adjust: exact' in print_styles
     assert 'thead { display: table-header-group; }' in print_styles
-    assert '/static/print.css?v=0.8.20' in script
+    assert '/static/print.css?v=0.8.21' in script
     assert (
         ".party:first-child { border-right: 0; border-bottom: 0; border-left: 0; }"
         in print_styles
@@ -101,7 +109,7 @@ def test_existing_despatch_editor_uses_current_serbian_issue_date():
 def test_new_document_follows_active_scope_and_reveals_saved_document():
     script = (PROJECT_ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
 
-    assert 'state.documentScope === "despatch" ? "eotpremnice" : "sef"' in script
+    assert '["receipt", "despatch"].includes(state.documentScope) ? "eotpremnice" : "sef"' in script
     assert (
         'state.documentScope = provider === "eotpremnice" ? "despatch" : "outbound"'
         in script
